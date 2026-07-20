@@ -67,7 +67,7 @@ export default function Home() {
             <input
               id="members"
               type="text"
-              placeholder="예: 이다혜, 김철수, 박영희"
+              placeholder="예: 이다혜, 박규남, 김다희"
               value={members}
               onChange={(e) => setMembers(e.target.value)}
               className="rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:border-zinc-700 dark:bg-zinc-900"

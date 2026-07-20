@@ -12,8 +12,8 @@ const DUMMY_MINUTES: Minutes = {
   ],
   todos: [
     { name: "이다혜", task: "발표 스크립트 초안 작성", deadline: "7/19(수)" },
-    { name: "김철수", task: "데이터 시각화 차트 3개 제작", deadline: "7/18(화)" },
-    { name: "박영희", task: "PPT 디자인 템플릿 세팅", deadline: "7/18(화)" },
+    { name: "박규남", task: "데이터 시각화 차트 3개 제작", deadline: "7/18(화)" },
+    { name: "김다희", task: "PPT 디자인 템플릿 세팅", deadline: "7/18(화)" },
   ],
   pending: [
     "교수님 피드백 반영 여부 — 다음 회의에서 결정",
