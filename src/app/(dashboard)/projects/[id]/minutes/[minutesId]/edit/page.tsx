@@ -1,6 +1,6 @@
 "use client";
 
-export default function EditPage() {
+export default function EditMinutesPage() {
   // TODO: 회의록 편집 UI 구현
   return (
     <main className="flex flex-1 flex-col items-center px-4 py-12">

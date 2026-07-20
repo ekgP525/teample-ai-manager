@@ -21,12 +21,12 @@ const DUMMY_MINUTES: Minutes = {
   ],
 };
 
-export default async function ResultPage({
+export default async function MinutesPage({
   params,
 }: {
-  params: Promise<{ id: string }>;
+  params: Promise<{ id: string; minutesId: string }>;
 }) {
-  const { id } = await params;
+  const { id, minutesId } = await params;
 
   // TODO: Supabase에서 실제 데이터 조회
   const minutes = DUMMY_MINUTES;
@@ -37,14 +37,22 @@ export default async function ResultPage({
         <div className="mb-8 flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold">회의록</h1>
-            <p className="text-sm text-zinc-500">ID: {id}</p>
+            <p className="text-sm text-zinc-500">ID: {minutesId}</p>
           </div>
-          <a
-            href="/"
-            className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
-          >
-            새 회의록
-          </a>
+          <div className="flex gap-2">
+            <a
+              href={`/projects/${id}/minutes/${minutesId}/edit`}
+              className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+            >
+              편집
+            </a>
+            <a
+              href={`/projects/${id}`}
+              className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+            >
+              새 회의록
+            </a>
+          </div>
         </div>
 
         <section className="mb-6">
