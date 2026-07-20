@@ -1,0 +1,23 @@
+spring:
+  application:
+    name: teample-backend
+
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/teample}
+    username: ${DATABASE_USERNAME:postgres}
+    password: ${DATABASE_PASSWORD:postgres}
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+
+server:
+  port: ${PORT:8080}
+
+# Anthropic Claude API
+anthropic:
+  api-key: ${ANTHROPIC_API_KEY:}
