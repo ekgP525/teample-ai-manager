@@ -1,36 +1,26 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 팀플 AI 매니저
 
-## Getting Started
+카톡 대화를 붙여넣으면 AI가 회의록을 자동 생성하는 웹서비스.
 
-First, run the development server:
+## 구조
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+```
+teample-ai-manager/
+├── frontend/    Next.js (TypeScript) → Vercel
+└── backend/     Spring Boot 3 (Java 17) → Railway
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 실행
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+# Frontend
+cd frontend && npm install && npm run dev    # localhost:3000
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+# Backend
+cd backend && ./gradlew bootRun              # localhost:8080
+```
 
-## Learn More
+## 환경변수
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Frontend: `frontend/.env.local.example` 참고
+- Backend: `backend/src/main/resources/application.yml`에 환경변수로 주입 (하드코딩 금지)
