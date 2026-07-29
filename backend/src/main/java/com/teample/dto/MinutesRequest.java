@@ -6,6 +6,8 @@ import lombok.Data;
 @Data
 public class MinutesRequest {
 
+    private String title;
+
     @NotBlank
     private String meetingDate;
 

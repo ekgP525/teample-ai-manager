@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import type { Minutes } from "@/types/minutes";
+import { DeleteMinutesButton } from "./delete-button";
 
 async function getMinutes(projectId: string, minutesId: string): Promise<Minutes | null> {
   try {
@@ -29,8 +30,7 @@ export default async function MinutesPage({
       <div className="w-full max-w-2xl">
         <div className="mb-8 flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">회의록</h1>
-            <p className="text-sm text-zinc-500">ID: {minutesId}</p>
+            <h1 className="text-2xl font-bold">{minutes.title || "회의록"}</h1>
           </div>
           <div className="flex gap-2">
             <a
@@ -138,6 +138,10 @@ export default async function MinutesPage({
             ))}
           </ul>
         </section>
+
+        <div className="mt-10 border-t border-zinc-200 pt-6 dark:border-zinc-700">
+          <DeleteMinutesButton projectId={id} minutesId={minutesId} />
+        </div>
       </div>
     </main>
   );

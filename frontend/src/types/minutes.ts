@@ -6,6 +6,7 @@ export interface Todo {
 
 export interface Minutes {
   id: string;
+  title: string;
   topic: string;
   discussions: string[];
   decisions: string[];
@@ -16,6 +17,7 @@ export interface Minutes {
 
 export interface MinutesSummary {
   id: string;
+  title: string;
   subject: string;
   meetingDate: string;
   topic: string;

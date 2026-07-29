@@ -13,6 +13,7 @@ import java.util.List;
 @AllArgsConstructor
 public class MinutesResponse {
     private String id;
+    private String title;
     private String topic;
     private List<String> discussions;
     private List<String> decisions;

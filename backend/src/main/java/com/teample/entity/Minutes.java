@@ -32,6 +32,8 @@ public class Minutes {
     @Column(name = "raw_text", columnDefinition = "text", nullable = false)
     private String rawText;
 
+    private String title;
+
     private String topic;
 
     @JdbcTypeCode(SqlTypes.JSON)

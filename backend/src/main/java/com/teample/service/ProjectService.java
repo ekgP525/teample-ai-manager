@@ -3,9 +3,11 @@ package com.teample.service;
 import com.teample.dto.ProjectRequest;
 import com.teample.dto.ProjectResponse;
 import com.teample.entity.Project;
+import com.teample.repository.MinutesRepository;
 import com.teample.repository.ProjectRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Optional;
@@ -15,6 +17,7 @@ import java.util.Optional;
 public class ProjectService {
 
     private final ProjectRepository projectRepository;
+    private final MinutesRepository minutesRepository;
 
     public ProjectResponse create(ProjectRequest request) {
         Project project = Project.builder()
@@ -33,6 +36,15 @@ public class ProjectService {
 
     public Optional<ProjectResponse> findById(String id) {
         return projectRepository.findById(id).map(this::toResponse);
+    }
+
+    @Transactional
+    public boolean delete(String id) {
+        return projectRepository.findById(id).map(project -> {
+            minutesRepository.deleteAll(minutesRepository.findByProjectIdOrderByCreatedAtDesc(id));
+            projectRepository.delete(project);
+            return true;
+        }).orElse(false);
     }
 
     private ProjectResponse toResponse(Project p) {

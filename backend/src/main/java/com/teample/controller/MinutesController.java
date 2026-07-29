@@ -48,4 +48,14 @@ public class MinutesController {
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteMinutes(
+            @PathVariable String projectId,
+            @PathVariable String id) {
+        if (minutesService.delete(id)) {
+            return ResponseEntity.noContent().build();
+        }
+        return ResponseEntity.notFound().build();
+    }
 }

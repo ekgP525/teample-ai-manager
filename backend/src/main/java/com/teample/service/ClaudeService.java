@@ -64,6 +64,7 @@ public class ClaudeService {
                 반드시 아래 JSON 형식만 출력하고, 다른 텍스트는 포함하지 마세요.
 
                 {
+                  "title": "회의록 제목 (간결하고 핵심적인 제목, 예: 'UI 디자인 확정 회의')",
                   "topic": "회의 주제 (한 줄 요약)",
                   "discussions": ["주요 논의 내용 1", "주요 논의 내용 2", ...],
                   "decisions": ["최종 결정 사항 1", "최종 결정 사항 2", ...],
@@ -97,6 +98,7 @@ public class ClaudeService {
 
             JsonNode root = objectMapper.readTree(json);
 
+            String title = root.path("title").asText("");
             String topic = root.path("topic").asText("");
             List<String> discussions = jsonArrayToList(root.path("discussions"));
             List<String> decisions = jsonArrayToList(root.path("decisions"));
@@ -112,7 +114,7 @@ public class ClaudeService {
                 ));
             }
 
-            return new MinutesResult(topic, discussions, decisions, pending, todos, nextAgenda);
+            return new MinutesResult(title, topic, discussions, decisions, pending, todos, nextAgenda);
         } catch (Exception e) {
             throw new RuntimeException("Claude 응답 파싱 실패: " + e.getMessage(), e);
         }
@@ -129,6 +131,7 @@ public class ClaudeService {
     }
 
     public record MinutesResult(
+            String title,
             String topic,
             List<String> discussions,
             List<String> decisions,

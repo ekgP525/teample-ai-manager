@@ -8,6 +8,7 @@ export default function EditMinutesPage() {
   const router = useRouter();
   const { id, minutesId } = useParams<{ id: string; minutesId: string }>();
 
+  const [title, setTitle] = useState("");
   const [topic, setTopic] = useState("");
   const [discussions, setDiscussions] = useState<string[]>([]);
   const [decisions, setDecisions] = useState<string[]>([]);
@@ -25,6 +26,7 @@ export default function EditMinutesPage() {
         return res.json();
       })
       .then((data: Minutes) => {
+        setTitle(data.title);
         setTopic(data.topic);
         setDiscussions(data.discussions);
         setDecisions(data.decisions);
@@ -48,6 +50,7 @@ export default function EditMinutesPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             id: minutesId,
+            title,
             topic,
             discussions,
             decisions,
@@ -143,6 +146,17 @@ export default function EditMinutesPage() {
             {error}
           </p>
         )}
+
+        {/* 제목 */}
+        <section className="mb-6">
+          <label className="mb-2 block text-lg font-semibold">제목</label>
+          <input
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:border-zinc-700 dark:bg-zinc-900"
+          />
+        </section>
 
         {/* 회의 주제 */}
         <section className="mb-6">

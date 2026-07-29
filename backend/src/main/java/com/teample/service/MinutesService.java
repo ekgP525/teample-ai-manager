@@ -39,6 +39,8 @@ public class MinutesService {
                 .project(project)
                 .meetingDate(LocalDate.parse(request.getMeetingDate()))
                 .rawText(request.getRawText())
+                .title(request.getTitle() != null && !request.getTitle().isBlank()
+                        ? request.getTitle() : result.title())
                 .topic(result.topic())
                 .discussions(result.discussions())
                 .decisions(result.decisions())
@@ -55,6 +57,7 @@ public class MinutesService {
         return minutesRepository.findByProjectIdOrderByCreatedAtDesc(projectId).stream()
                 .map(m -> MinutesSummary.builder()
                         .id(m.getId())
+                        .title(m.getTitle())
                         .subject(m.getProject().getName())
                         .meetingDate(m.getMeetingDate().toString())
                         .topic(m.getTopic())
@@ -69,6 +72,7 @@ public class MinutesService {
 
     public Optional<MinutesResponse> update(String id, MinutesResponse request) {
         return minutesRepository.findById(id).map(minutes -> {
+            minutes.setTitle(request.getTitle());
             minutes.setTopic(request.getTopic());
             minutes.setDiscussions(new ArrayList<>(request.getDiscussions()));
             minutes.setDecisions(new ArrayList<>(request.getDecisions()));
@@ -82,9 +86,17 @@ public class MinutesService {
         });
     }
 
+    public boolean delete(String id) {
+        return minutesRepository.findById(id).map(minutes -> {
+            minutesRepository.delete(minutes);
+            return true;
+        }).orElse(false);
+    }
+
     private MinutesResponse toResponse(Minutes m) {
         return MinutesResponse.builder()
                 .id(m.getId())
+                .title(m.getTitle())
                 .topic(m.getTopic())
                 .discussions(m.getDiscussions())
                 .decisions(m.getDecisions())

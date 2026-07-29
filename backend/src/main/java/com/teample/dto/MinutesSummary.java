@@ -11,6 +11,7 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class MinutesSummary {
     private String id;
+    private String title;
     private String subject;
     private String meetingDate;
     private String topic;
