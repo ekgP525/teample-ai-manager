@@ -22,15 +22,12 @@ public class Minutes {
     @GeneratedValue(strategy = GenerationType.UUID)
     private String id;
 
-    @Column(nullable = false)
-    private String subject;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "project_id", nullable = false)
+    private Project project;
 
     @Column(name = "meeting_date", nullable = false)
     private LocalDate meetingDate;
-
-    @JdbcTypeCode(SqlTypes.JSON)
-    @Column
-    private List<String> members;
 
     @Column(name = "raw_text", columnDefinition = "text", nullable = false)
     private String rawText;

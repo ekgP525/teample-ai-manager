@@ -20,12 +20,6 @@ export default function DashboardLayout({
             >
               프로젝트
             </Link>
-            <Link
-              href="/history"
-              className="text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
-            >
-              회의록
-            </Link>
           </div>
         </nav>
       </header>

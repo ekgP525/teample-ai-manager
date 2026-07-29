@@ -14,9 +14,17 @@ export interface Minutes {
   nextAgenda: string[];
 }
 
-export interface MeetingInput {
+export interface MinutesSummary {
+  id: string;
   subject: string;
   meetingDate: string;
+  topic: string;
+  createdAt: string;
+}
+
+export interface Project {
+  id: string;
+  name: string;
   members: string[];
-  rawText: string;
+  createdAt: string;
 }

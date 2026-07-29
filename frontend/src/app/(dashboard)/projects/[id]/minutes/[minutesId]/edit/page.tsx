@@ -19,7 +19,7 @@ export default function EditMinutesPage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/minutes/${minutesId}`)
+    fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/projects/${id}/minutes/${minutesId}`)
       .then((res) => {
         if (!res.ok) throw new Error("회의록을 불러올 수 없습니다.");
         return res.json();
@@ -42,7 +42,7 @@ export default function EditMinutesPage() {
 
     try {
       const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/api/minutes/${minutesId}`,
+        `${process.env.NEXT_PUBLIC_API_URL}/api/projects/${id}/minutes/${minutesId}`,
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },

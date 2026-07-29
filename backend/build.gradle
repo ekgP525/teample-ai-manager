@@ -25,8 +25,9 @@ dependencies {
 	// OpenAPI / Swagger
 	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.9'
 
-	// .env 파일 로드
-	implementation 'me.paulschwarz:spring-dotenv:4.0.0'
+	// Claude API
+	implementation 'com.anthropic:anthropic-java:2.52.0'
+
 
 	compileOnly 'org.projectlombok:lombok'
 	annotationProcessor 'org.projectlombok:lombok'
@@ -40,6 +41,19 @@ dependencies {
 	testCompileOnly 'org.projectlombok:lombok'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 	testAnnotationProcessor 'org.projectlombok:lombok'
+}
+
+// .env 파일을 환경변수로 로드
+bootRun {
+	def envFile = file('.env')
+	if (envFile.exists()) {
+		envFile.readLines().each { line ->
+			if (line && !line.startsWith('#') && line.contains('=')) {
+				def (key, value) = line.split('=', 2)
+				environment key.trim(), value.trim()
+			}
+		}
+	}
 }
 
 tasks.named('test') {
