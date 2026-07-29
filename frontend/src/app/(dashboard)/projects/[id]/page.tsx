@@ -67,7 +67,7 @@ export default function ProjectDetailPage() {
               <input
                 id="subject"
                 type="text"
-                placeholder="예: 소프트웨어공학"
+                placeholder="예: AI캡스톤디자인"
                 value={subject}
                 onChange={(e) => setSubject(e.target.value)}
                 className="rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:border-zinc-700 dark:bg-zinc-900"

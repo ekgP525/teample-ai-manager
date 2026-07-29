@@ -6,11 +6,12 @@ export interface Todo {
 
 export interface Minutes {
   id: string;
-  meetingId: string;
-  summary: string;
+  topic: string;
+  discussions: string[];
   decisions: string[];
-  todos: Todo[];
   pending: string[];
+  todos: Todo[];
+  nextAgenda: string[];
 }
 
 export interface MeetingInput {

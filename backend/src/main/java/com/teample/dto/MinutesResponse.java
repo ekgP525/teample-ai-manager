@@ -13,8 +13,10 @@ import java.util.List;
 @AllArgsConstructor
 public class MinutesResponse {
     private String id;
-    private String summary;
+    private String topic;
+    private List<String> discussions;
     private List<String> decisions;
-    private List<TodoItem> todos;
     private List<String> pending;
+    private List<TodoItem> todos;
+    private List<String> nextAgenda;
 }
