@@ -11,14 +11,41 @@ export default function ProjectDetailPage() {
   const [members, setMembers] = useState("");
   const [rawText, setRawText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
+    setError("");
 
-    // TODO: Claude API 호출 → Supabase 저장 → 결과 페이지 이동
-    const dummyId = crypto.randomUUID();
-    router.push(`/projects/${id}/minutes/${dummyId}`);
+    try {
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/api/minutes`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            subject,
+            meetingDate,
+            members: members.split(",").map((m) => m.trim()).filter(Boolean),
+            rawText,
+          }),
+        }
+      );
+
+      if (!res.ok) {
+        throw new Error(`서버 오류 (${res.status})`);
+      }
+
+      const data = await res.json();
+      router.push(`/projects/${id}/minutes/${data.id}`);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "회의록 생성에 실패했습니다."
+      );
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const isFormValid = subject && meetingDate && members && rawText;
@@ -87,6 +114,12 @@ export default function ProjectDetailPage() {
               className="rounded-lg border border-zinc-300 px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:border-zinc-700 dark:bg-zinc-900"
             />
           </div>
+
+          {error && (
+            <p className="rounded-lg bg-red-50 px-4 py-2.5 text-sm text-red-600 dark:bg-red-950 dark:text-red-400">
+              {error}
+            </p>
+          )}
 
           <button
             type="submit"
