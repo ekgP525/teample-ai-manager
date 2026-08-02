@@ -3,9 +3,10 @@ spring:
     name: teample-backend
 
   datasource:
-    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/teample}
-    username: ${DATABASE_USERNAME:postgres}
-    password: ${DATABASE_PASSWORD:postgres}
+    url: ${DATABASE_URL:jdbc:h2:mem:teample}
+    username: ${DATABASE_USERNAME:sa}
+    password: ${DATABASE_PASSWORD:}
+    driver-class-name: ${DATABASE_DRIVER:org.h2.Driver}
 
   jpa:
     hibernate:
