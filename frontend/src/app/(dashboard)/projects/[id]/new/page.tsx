@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter, useParams } from "next/navigation";
+import { createMinutes } from "@/lib/api/minutes";
 
 export default function NewMinutesPage() {
   const router = useRouter();
@@ -18,18 +19,7 @@ export default function NewMinutesPage() {
     setError("");
 
     try {
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/api/projects/${id}/minutes`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title, meetingDate, rawText }),
-        }
-      );
-
-      if (!res.ok) throw new Error(`서버 오류 (${res.status})`);
-
-      const data = await res.json();
+      const data = await createMinutes(id, { title, meetingDate, rawText });
       router.push(`/projects/${id}/minutes/${data.id}`);
     } catch (err) {
       setError(

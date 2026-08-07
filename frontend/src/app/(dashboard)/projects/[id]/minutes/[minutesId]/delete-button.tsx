@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { deleteMinutes } from "@/lib/api/minutes";
 
 export function DeleteMinutesButton({
   projectId,
@@ -14,12 +15,11 @@ export function DeleteMinutesButton({
   const [confirming, setConfirming] = useState(false);
 
   const handleDelete = async () => {
-    const res = await fetch(
-      `${process.env.NEXT_PUBLIC_API_URL}/api/projects/${projectId}/minutes/${minutesId}`,
-      { method: "DELETE" }
-    );
-    if (res.ok) {
+    try {
+      await deleteMinutes(projectId, minutesId);
       router.push(`/projects/${projectId}`);
+    } catch {
+      // 삭제 오류 UI는 다음 화면 안정화 작업에서 처리합니다.
     }
   };
 

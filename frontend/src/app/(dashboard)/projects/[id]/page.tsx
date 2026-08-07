@@ -3,55 +3,18 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { ApiError } from "@/lib/api/client";
+import { getProjectMinutes } from "@/lib/api/minutes";
+import { deleteProject, getProject } from "@/lib/api/projects";
 import type { MinutesSummary, Project } from "@/types/minutes";
 
-class ApiRequestError extends Error {
-  constructor(message: string, readonly status: number) {
-    super(message);
-  }
-}
-
-async function getErrorMessage(response: Response, fallback: string) {
-  try {
-    const data = (await response.json()) as { message?: string };
-    return data.message || `${fallback} (${response.status})`;
-  } catch {
-    return `${fallback} (${response.status})`;
-  }
-}
-
 async function fetchProjectData(projectId: string, signal?: AbortSignal) {
-  const [projectResponse, minutesResponse] = await Promise.all([
-    fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/projects/${projectId}`, {
-      signal,
-    }),
-    fetch(
-      `${process.env.NEXT_PUBLIC_API_URL}/api/projects/${projectId}/minutes`,
-      { signal }
-    ),
+  const [project, minutesList] = await Promise.all([
+    getProject(projectId, signal),
+    getProjectMinutes(projectId, signal),
   ]);
 
-  if (!projectResponse.ok) {
-    throw new ApiRequestError(
-      await getErrorMessage(projectResponse, "프로젝트를 불러오지 못했습니다."),
-      projectResponse.status
-    );
-  }
-
-  if (!minutesResponse.ok) {
-    throw new ApiRequestError(
-      await getErrorMessage(
-        minutesResponse,
-        "회의록 목록을 불러오지 못했습니다."
-      ),
-      minutesResponse.status
-    );
-  }
-
-  return {
-    project: (await projectResponse.json()) as Project,
-    minutesList: (await minutesResponse.json()) as MinutesSummary[],
-  };
+  return { project, minutesList };
 }
 
 export default function ProjectDetailPage() {
@@ -83,7 +46,7 @@ export default function ProjectDetailPage() {
         setProject(null);
         setMinutesList([]);
 
-        if (error instanceof ApiRequestError && error.status === 404) {
+        if (error instanceof ApiError && error.status === 404) {
           setProjectNotFound(true);
           setLoadError("");
           return;
@@ -119,7 +82,7 @@ export default function ProjectDetailPage() {
       setProject(null);
       setMinutesList([]);
 
-      if (error instanceof ApiRequestError && error.status === 404) {
+      if (error instanceof ApiError && error.status === 404) {
         setProjectNotFound(true);
       } else {
         setLoadError(
@@ -139,17 +102,7 @@ export default function ProjectDetailPage() {
     setDeleteError("");
 
     try {
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/api/projects/${id}`,
-        { method: "DELETE" }
-      );
-
-      if (!response.ok) {
-        throw new Error(
-          await getErrorMessage(response, "프로젝트를 삭제하지 못했습니다.")
-        );
-      }
-
+      await deleteProject(id);
       router.push("/projects");
     } catch (error) {
       setDeleteError(

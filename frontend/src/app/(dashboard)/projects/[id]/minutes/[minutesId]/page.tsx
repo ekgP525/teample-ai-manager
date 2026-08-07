@@ -1,15 +1,14 @@
 import { notFound } from "next/navigation";
+import { getMinutes } from "@/lib/api/minutes";
 import type { Minutes } from "@/types/minutes";
 import { DeleteMinutesButton } from "./delete-button";
 
-async function getMinutes(projectId: string, minutesId: string): Promise<Minutes | null> {
+async function findMinutes(
+  projectId: string,
+  minutesId: string
+): Promise<Minutes | null> {
   try {
-    const res = await fetch(
-      `${process.env.NEXT_PUBLIC_API_URL}/api/projects/${projectId}/minutes/${minutesId}`,
-      { cache: "no-store" }
-    );
-    if (!res.ok) return null;
-    return res.json();
+    return await getMinutes(projectId, minutesId, { cache: "no-store" });
   } catch {
     return null;
   }
@@ -22,7 +21,7 @@ export default async function MinutesPage({
 }) {
   const { id, minutesId } = await params;
 
-  const minutes = await getMinutes(id, minutesId);
+  const minutes = await findMinutes(id, minutesId);
   if (!minutes) notFound();
 
   return (

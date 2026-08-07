@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
+import { getMinutes, updateMinutes } from "@/lib/api/minutes";
 import type { Minutes, Todo } from "@/types/minutes";
 
 export default function EditMinutesPage() {
@@ -20,11 +21,7 @@ export default function EditMinutesPage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/projects/${id}/minutes/${minutesId}`)
-      .then((res) => {
-        if (!res.ok) throw new Error("회의록을 불러올 수 없습니다.");
-        return res.json();
-      })
+    void getMinutes(id, minutesId)
       .then((data: Minutes) => {
         setTitle(data.title);
         setTopic(data.topic);
@@ -43,25 +40,15 @@ export default function EditMinutesPage() {
     setError("");
 
     try {
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/api/projects/${id}/minutes/${minutesId}`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            id: minutesId,
-            title,
-            topic,
-            discussions,
-            decisions,
-            pending,
-            todos,
-            nextAgenda,
-          }),
-        }
-      );
-
-      if (!res.ok) throw new Error(`저장 실패 (${res.status})`);
+      await updateMinutes(id, minutesId, {
+        title,
+        topic,
+        discussions,
+        decisions,
+        pending,
+        todos,
+        nextAgenda,
+      });
       router.push(`/projects/${id}/minutes/${minutesId}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "저장에 실패했습니다.");

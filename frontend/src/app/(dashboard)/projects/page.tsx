@@ -2,30 +2,8 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { createProject, getProjects } from "@/lib/api/projects";
 import type { Project } from "@/types/minutes";
-
-async function getErrorMessage(response: Response, fallback: string) {
-  try {
-    const data = (await response.json()) as { message?: string };
-    return data.message || `${fallback} (${response.status})`;
-  } catch {
-    return `${fallback} (${response.status})`;
-  }
-}
-
-async function fetchProjects() {
-  const response = await fetch(
-    `${process.env.NEXT_PUBLIC_API_URL}/api/projects`
-  );
-
-  if (!response.ok) {
-    throw new Error(
-      await getErrorMessage(response, "프로젝트를 불러오지 못했습니다.")
-    );
-  }
-
-  return (await response.json()) as Project[];
-}
 
 export default function ProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -42,7 +20,7 @@ export default function ProjectsPage() {
     setLoadError("");
 
     try {
-      const data = await fetchProjects();
+      const data = await getProjects();
       setProjects(data);
     } catch (error) {
       setLoadError(
@@ -58,7 +36,7 @@ export default function ProjectsPage() {
   useEffect(() => {
     let isCancelled = false;
 
-    void fetchProjects()
+    void getProjects()
       .then((data) => {
         if (!isCancelled) setProjects(data);
       })
@@ -86,28 +64,13 @@ export default function ProjectsPage() {
     setCreateError("");
 
     try {
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/api/projects`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: name.trim(),
-            members: members
-              .split(",")
-              .map((member) => member.trim())
-              .filter(Boolean),
-          }),
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error(
-          await getErrorMessage(response, "프로젝트를 생성하지 못했습니다.")
-        );
-      }
-
-      const created = (await response.json()) as Project;
+      const created = await createProject({
+        name: name.trim(),
+        members: members
+          .split(",")
+          .map((member) => member.trim())
+          .filter(Boolean),
+      });
       setProjects((currentProjects) => [created, ...currentProjects]);
       setName("");
       setMembers("");
