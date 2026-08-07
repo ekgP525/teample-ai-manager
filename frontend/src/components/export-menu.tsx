@@ -228,7 +228,7 @@ export function ExportMenu({ minutes }: { minutes: Minutes }) {
             onClick={() => void handleCopy()}
             className="w-full rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800"
           >
-            {isCopied ? "✓ 복사되었습니다" : "노션에 복사"}
+            {isCopied ? "✓ 복사되었습니다" : "Markdown으로 복사"}
           </button>
           <button
             type="button"
