@@ -167,19 +167,19 @@ export default function ProjectDetailPage() {
   }
 
   return (
-    <main className="flex flex-1 flex-col items-center px-4 py-12">
+    <main className="flex flex-1 flex-col items-center px-4 py-8 sm:py-12">
       <div className="w-full max-w-2xl">
-        <div className="mb-8 flex items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold">{project.name}</h1>
-            <p className="text-sm text-zinc-500">
+        <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <h1 className="break-words text-2xl font-bold">{project.name}</h1>
+            <p className="break-words text-sm text-zinc-500">
               팀원: {project.members.join(", ")}
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:shrink-0">
             <Link
               href={`/projects/${id}/new`}
-              className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+              className="flex-1 rounded-lg bg-zinc-900 px-4 py-2 text-center text-sm font-medium text-white transition-colors hover:bg-zinc-800 sm:flex-none dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
             >
               새 회의록
             </Link>
@@ -195,12 +195,12 @@ export default function ProjectDetailPage() {
                 삭제
               </button>
             ) : (
-              <div className="flex items-center gap-2">
+              <div className="flex flex-1 items-center gap-2 sm:flex-none">
                 <button
                   type="button"
                   onClick={() => void handleDelete()}
                   disabled={isDeleting}
-                  className="rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="flex-1 rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none"
                 >
                   {isDeleting ? "삭제 중..." : "확인"}
                 </button>
@@ -211,7 +211,7 @@ export default function ProjectDetailPage() {
                     setDeleteError("");
                   }}
                   disabled={isDeleting}
-                  className="rounded-lg border border-zinc-300 px-3 py-2 text-sm hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                  className="flex-1 rounded-lg border border-zinc-300 px-3 py-2 text-sm hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none dark:border-zinc-700 dark:hover:bg-zinc-800"
                 >
                   취소
                 </button>
@@ -239,14 +239,14 @@ export default function ProjectDetailPage() {
                   href={`/projects/${id}/minutes/${item.id}`}
                   className="block rounded-lg border border-zinc-200 p-3 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
                 >
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <p className="font-medium">{item.title || item.topic}</p>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="break-words font-medium">{item.title || item.topic}</p>
                       <p className="text-xs text-zinc-500">
                         {item.meetingDate}
                       </p>
                     </div>
-                    <span className="text-xs text-zinc-400">
+                    <span className="shrink-0 text-xs text-zinc-400">
                       {item.createdAt?.slice(0, 10)}
                     </span>
                   </div>

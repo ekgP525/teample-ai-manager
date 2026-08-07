@@ -92,16 +92,17 @@ export default function ProjectsPage() {
     .filter(Boolean);
 
   return (
-    <main className="flex flex-1 flex-col items-center px-4 py-12">
+    <main className="flex flex-1 flex-col items-center px-4 py-8 sm:py-12">
       <div className="w-full max-w-2xl">
-        <div className="mb-8 flex items-center justify-between">
+        <div className="mb-8 flex items-center justify-between gap-4">
           <h1 className="text-2xl font-bold">프로젝트</h1>
           <button
+            type="button"
             onClick={() => {
               setIsCreating((current) => !current);
               setCreateError("");
             }}
-            className="rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+            className="shrink-0 rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
           >
             {isCreating ? "취소" : "새 프로젝트"}
           </button>
@@ -191,7 +192,7 @@ export default function ProjectsPage() {
               <Link
                 key={project.id}
                 href={`/projects/${project.id}`}
-                className="block rounded-lg border border-zinc-200 p-4 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
+                  className="block break-words rounded-lg border border-zinc-200 p-4 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
               >
                 <h2 className="font-semibold">{project.name}</h2>
                 <p className="mt-1 text-sm text-zinc-500">

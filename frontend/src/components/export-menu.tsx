@@ -203,7 +203,7 @@ export function ExportMenu({ minutes }: { minutes: Minutes }) {
   };
 
   return (
-    <div ref={menuRef} className="relative print:hidden">
+    <div ref={menuRef} className="relative w-full sm:w-auto print:hidden">
       <button
         type="button"
         onClick={() => {
@@ -212,7 +212,7 @@ export function ExportMenu({ minutes }: { minutes: Minutes }) {
         }}
         aria-haspopup="menu"
         aria-expanded={isOpen}
-        className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+        className="w-full rounded-lg border border-zinc-300 px-3 py-1.5 text-sm transition-colors hover:bg-zinc-100 sm:w-auto dark:border-zinc-700 dark:hover:bg-zinc-800"
       >
         내보내기
       </button>
@@ -220,7 +220,7 @@ export function ExportMenu({ minutes }: { minutes: Minutes }) {
       {isOpen && (
         <div
           role="menu"
-          className="absolute right-0 top-full z-20 mt-2 w-52 overflow-hidden rounded-lg border border-zinc-200 bg-white p-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900"
+          className="absolute left-0 top-full z-20 mt-2 w-56 max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-zinc-200 bg-white p-1 shadow-lg sm:left-auto sm:right-0 dark:border-zinc-700 dark:bg-zinc-900"
         >
           <button
             type="button"
