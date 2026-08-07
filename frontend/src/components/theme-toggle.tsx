@@ -15,7 +15,7 @@ export function ThemeToggle() {
       onClick={toggleTheme}
       aria-label="라이트 모드와 다크 모드 전환"
       title="테마 전환"
-      className="fixed right-3 top-2 z-50 flex h-9 w-9 items-center justify-center text-zinc-600 transition-colors hover:text-zinc-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:text-zinc-400 dark:hover:text-zinc-50"
+      className="fixed right-3 top-2 z-50 flex h-9 w-9 items-center justify-center text-zinc-600 transition-colors hover:text-zinc-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 print:hidden dark:text-zinc-400 dark:hover:text-zinc-50"
     >
       <svg
         viewBox="0 0 24 24"

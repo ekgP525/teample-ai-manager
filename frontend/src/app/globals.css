@@ -27,3 +27,21 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+@media print {
+  @page {
+    size: A4;
+    margin: 16mm;
+  }
+
+  body {
+    background: #ffffff;
+    color: #171717;
+    transition: none;
+  }
+
+  section,
+  table {
+    break-inside: avoid;
+  }
+}

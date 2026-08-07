@@ -1,4 +1,6 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
+import { ExportMenu } from "@/components/export-menu";
 import { getMinutes } from "@/lib/api/minutes";
 import type { Minutes } from "@/types/minutes";
 import { DeleteMinutesButton } from "./delete-button";
@@ -25,25 +27,26 @@ export default async function MinutesPage({
   if (!minutes) notFound();
 
   return (
-    <main className="flex flex-1 flex-col items-center px-4 py-12">
-      <div className="w-full max-w-2xl">
+    <main className="flex flex-1 flex-col items-center px-4 py-12 print:p-0">
+      <div className="w-full max-w-2xl print:max-w-none">
         <div className="mb-8 flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold">{minutes.title || "회의록"}</h1>
           </div>
-          <div className="flex gap-2">
-            <a
+          <div className="flex gap-2 print:hidden">
+            <ExportMenu minutes={minutes} />
+            <Link
               href={`/projects/${id}/minutes/${minutesId}/edit`}
               className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
             >
               편집
-            </a>
-            <a
+            </Link>
+            <Link
               href={`/projects/${id}`}
               className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
             >
               프로젝트로 돌아가기
-            </a>
+            </Link>
           </div>
         </div>
 
@@ -138,7 +141,7 @@ export default async function MinutesPage({
           </ul>
         </section>
 
-        <div className="mt-10 border-t border-zinc-200 pt-6 dark:border-zinc-700">
+        <div className="mt-10 border-t border-zinc-200 pt-6 print:hidden dark:border-zinc-700">
           <DeleteMinutesButton projectId={id} minutesId={minutesId} />
         </div>
       </div>
