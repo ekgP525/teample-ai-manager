@@ -36,7 +36,7 @@ export default function EditMinutesPage() {
       })
       .catch((err) => setError(err.message))
       .finally(() => setIsLoading(false));
-  }, [minutesId]);
+  }, [id, minutesId]);
 
   const handleSave = async () => {
     setIsSaving(true);

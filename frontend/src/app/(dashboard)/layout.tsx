@@ -9,7 +9,7 @@ export default function DashboardLayout({
   return (
     <>
       <header className="border-b border-zinc-200 dark:border-zinc-800">
-        <nav className="mx-auto flex max-w-4xl items-center justify-between px-4 py-3">
+        <nav className="mx-auto flex max-w-4xl items-center justify-between py-3 pl-4 pr-16">
           <Link href="/projects" className="text-lg font-bold">
             팀플 AI
           </Link>
