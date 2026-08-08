@@ -18,6 +18,7 @@ public class ProjectService {
 
     private final ProjectRepository projectRepository;
     private final MinutesRepository minutesRepository;
+    private final TodoProgressSyncService todoProgressSyncService;
 
     public ProjectResponse create(ProjectRequest request) {
         Project project = Project.builder()
@@ -41,6 +42,7 @@ public class ProjectService {
     @Transactional
     public boolean delete(String id) {
         return projectRepository.findById(id).map(project -> {
+            todoProgressSyncService.deleteByProject(project);
             minutesRepository.deleteAll(minutesRepository.findByProjectIdOrderByCreatedAtDesc(id));
             projectRepository.delete(project);
             return true;

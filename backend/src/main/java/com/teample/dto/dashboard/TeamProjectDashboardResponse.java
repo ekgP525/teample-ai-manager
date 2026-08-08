@@ -11,11 +11,9 @@ import java.util.List;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class ProjectDashboardResponse {
+public class TeamProjectDashboardResponse {
     private String projectId;
     private String projectName;
-    private String selectedUserId;
-    private String selectedMemberName;
-    private DashboardMemberResponse selectedMember;
-    private List<DashboardMemberResponse> teamMembers;
+    private List<TeamMemberProgressResponse> members;
+    private List<TeamTodoProgressResponse> todos;
 }

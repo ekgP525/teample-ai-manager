@@ -11,16 +11,15 @@ import java.util.List;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class DashboardMemberResponse {
+public class MyProjectDashboardResponse {
+    private String projectId;
+    private String projectName;
     private String userId;
     private String memberName;
+    private String target;
     private int totalTodoCount;
     private int completedTodoCount;
     private int pendingTodoCount;
-    private int onTrackTodoCount;
-    private int overdueTodoCount;
-    private int noDeadlineTodoCount;
-    private int unknownDeadlineTodoCount;
     private int progressRate;
-    private List<DashboardTodoResponse> todos;
+    private List<TodoAssignmentResponse> todos;
 }

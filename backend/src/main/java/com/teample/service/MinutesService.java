@@ -11,6 +11,7 @@ import com.teample.repository.MinutesRepository;
 import com.teample.repository.ProjectRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -24,10 +25,12 @@ public class MinutesService {
     private final MinutesRepository minutesRepository;
     private final ProjectRepository projectRepository;
     private final ClaudeService claudeService;
+    private final TodoProgressSyncService todoProgressSyncService;
 
+    @Transactional
     public MinutesResponse create(String projectId, MinutesRequest request) {
         Project project = projectRepository.findById(projectId)
-                .orElseThrow(() -> new RuntimeException("프로젝트를 찾을 수 없습니다."));
+                .orElseThrow(() -> new RuntimeException("Project not found."));
 
         ClaudeService.MinutesResult result = claudeService.analyze(
                 request.getRawText(),
@@ -50,6 +53,7 @@ public class MinutesService {
                 .build();
 
         Minutes saved = minutesRepository.save(minutes);
+        todoProgressSyncService.syncMinutes(project, saved);
         return toResponse(saved);
     }
 
@@ -70,24 +74,28 @@ public class MinutesService {
         return minutesRepository.findById(id).map(this::toResponse);
     }
 
+    @Transactional
     public Optional<MinutesResponse> update(String id, MinutesResponse request) {
         return minutesRepository.findById(id).map(minutes -> {
             minutes.setTitle(request.getTitle());
             minutes.setTopic(request.getTopic());
-            minutes.setDiscussions(new ArrayList<>(request.getDiscussions()));
-            minutes.setDecisions(new ArrayList<>(request.getDecisions()));
-            minutes.setPending(new ArrayList<>(request.getPending()));
-            minutes.setTodos(request.getTodos().stream()
+            minutes.setDiscussions(new ArrayList<>(nullSafe(request.getDiscussions())));
+            minutes.setDecisions(new ArrayList<>(nullSafe(request.getDecisions())));
+            minutes.setPending(new ArrayList<>(nullSafe(request.getPending())));
+            minutes.setTodos(nullSafe(request.getTodos()).stream()
                     .map(t -> new TodoData(t.getName(), t.getTask(), t.getDeadline()))
                     .toList());
-            minutes.setNextAgenda(new ArrayList<>(request.getNextAgenda()));
+            minutes.setNextAgenda(new ArrayList<>(nullSafe(request.getNextAgenda())));
             Minutes saved = minutesRepository.save(minutes);
+            todoProgressSyncService.syncMinutes(saved.getProject(), saved);
             return toResponse(saved);
         });
     }
 
+    @Transactional
     public boolean delete(String id) {
         return minutesRepository.findById(id).map(minutes -> {
+            todoProgressSyncService.deleteByMinutes(minutes);
             minutesRepository.delete(minutes);
             return true;
         }).orElse(false);
@@ -101,10 +109,14 @@ public class MinutesService {
                 .discussions(m.getDiscussions())
                 .decisions(m.getDecisions())
                 .pending(m.getPending())
-                .todos(m.getTodos().stream()
+                .todos(nullSafe(m.getTodos()).stream()
                         .map(t -> new TodoItem(t.getName(), t.getTask(), t.getDeadline()))
                         .toList())
                 .nextAgenda(m.getNextAgenda())
                 .build();
+    }
+
+    private <T> List<T> nullSafe(List<T> values) {
+        return values == null ? List.of() : values;
     }
 }

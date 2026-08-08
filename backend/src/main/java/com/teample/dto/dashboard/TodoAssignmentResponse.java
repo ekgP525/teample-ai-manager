@@ -11,7 +11,7 @@ import java.time.LocalDateTime;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class DashboardTodoResponse {
+public class TodoAssignmentResponse {
     private String assignmentId;
     private String todoId;
     private String projectId;

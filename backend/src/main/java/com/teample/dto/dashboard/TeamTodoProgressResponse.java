@@ -5,26 +5,20 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.time.LocalDateTime;
+import java.util.List;
 
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class DashboardTodoResponse {
-    private String assignmentId;
+public class TeamTodoProgressResponse {
     private String todoId;
     private String projectId;
     private String projectName;
     private String minutesId;
     private String minutesTitle;
-    private String userId;
-    private String memberName;
     private String task;
     private String deadline;
-    private Boolean assigned;
-    private Boolean completed;
-    private String status;
-    private LocalDateTime completedAt;
-    private String deadlineStatus;
+    private String sourceAssignee;
+    private List<TodoAssignmentResponse> assignments;
 }

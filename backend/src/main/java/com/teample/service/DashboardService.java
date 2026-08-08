@@ -3,14 +3,22 @@ package com.teample.service;
 import com.teample.dto.dashboard.DashboardMemberResponse;
 import com.teample.dto.dashboard.DashboardProjectResponse;
 import com.teample.dto.dashboard.DashboardTodoResponse;
+import com.teample.dto.dashboard.MyProjectDashboardResponse;
 import com.teample.dto.dashboard.ProjectDashboardResponse;
-import com.teample.entity.Minutes;
+import com.teample.dto.dashboard.TeamMemberProgressResponse;
+import com.teample.dto.dashboard.TeamProjectDashboardResponse;
+import com.teample.dto.dashboard.TeamTodoProgressResponse;
+import com.teample.dto.dashboard.TodoAssignmentResponse;
+import com.teample.dto.dashboard.TodoProgressUpdateRequest;
 import com.teample.entity.Project;
-import com.teample.entity.TodoData;
-import com.teample.repository.MinutesRepository;
+import com.teample.entity.ProjectTodo;
+import com.teample.entity.TodoMemberProgress;
 import com.teample.repository.ProjectRepository;
+import com.teample.repository.ProjectTodoRepository;
+import com.teample.repository.TodoMemberProgressRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
@@ -32,164 +40,384 @@ public class DashboardService {
     private static final String UNASSIGNED = "UNASSIGNED";
 
     private final ProjectRepository projectRepository;
-    private final MinutesRepository minutesRepository;
+    private final ProjectTodoRepository projectTodoRepository;
+    private final TodoMemberProgressRepository todoMemberProgressRepository;
+    private final TodoProgressSyncService todoProgressSyncService;
 
-    public List<DashboardProjectResponse> findMyProjectDashboards(String memberName) {
-        String normalizedMemberName = normalizeOptionalMemberName(memberName);
+    @Transactional
+    public List<MyProjectDashboardResponse> findMyProjectDashboards(String userId) {
+        String resolvedUserId = normalizeOptionalUserId(userId);
+        if (resolvedUserId == null) {
+            return List.of();
+        }
+
         return projectRepository.findAll().stream()
-                .map(project -> buildProjectSummary(project, normalizedMemberName))
-                .filter(summary -> summary.getTotalTodoCount() > 0)
+                .map(project -> {
+                    todoProgressSyncService.syncProject(project);
+                    return buildMyProjectDashboard(project, resolvedUserId);
+                })
+                .filter(dashboard -> dashboard.getTotalTodoCount() > 0)
                 .toList();
     }
 
-    public Optional<ProjectDashboardResponse> findProjectDashboard(String projectId, String memberName) {
-        return projectRepository.findById(projectId)
-                .map(project -> buildProjectDashboard(project, normalizeOptionalMemberName(memberName)));
+    @Transactional
+    public Optional<MyProjectDashboardResponse> findMyProjectDashboard(String projectId, String userId) {
+        String resolvedUserId = normalizeOptionalUserId(userId);
+        if (resolvedUserId == null) {
+            return Optional.empty();
+        }
+
+        return projectRepository.findById(projectId).map(project -> {
+            todoProgressSyncService.syncProject(project);
+            return buildMyProjectDashboard(project, resolvedUserId);
+        });
     }
 
-    private DashboardProjectResponse buildProjectSummary(Project project, String memberName) {
-        List<DashboardTodoResponse> todos = collectTodos(project).stream()
-                .filter(todo -> memberName == null || memberName.equals(normalizeMemberName(todo.getMemberName())))
-                .sorted(todoComparator())
-                .toList();
-        int overdueCount = countByStatus(todos, OVERDUE);
-        int onTrackCount = todos.size() - overdueCount;
+    @Transactional
+    public Optional<TeamProjectDashboardResponse> findTeamProjectDashboard(String projectId) {
+        return projectRepository.findById(projectId).map(project -> {
+            todoProgressSyncService.syncProject(project);
+            return buildTeamProjectDashboard(project);
+        });
+    }
 
-        return DashboardProjectResponse.builder()
+    @Transactional
+    public Optional<TodoAssignmentResponse> updateProgressByAssignmentId(String assignmentId, TodoProgressUpdateRequest request) {
+        return todoMemberProgressRepository.findById(assignmentId)
+                .map(progress -> updateProgress(progress, request));
+    }
+
+    @Transactional
+    public Optional<TodoAssignmentResponse> updateProgressByTodoAndUser(String todoId, String userId, TodoProgressUpdateRequest request) {
+        String resolvedUserId = normalizeOptionalUserId(userId);
+        if (resolvedUserId == null) {
+            return Optional.empty();
+        }
+
+        return todoMemberProgressRepository.findByTodoIdAndUserId(todoId, resolvedUserId)
+                .filter(progress -> Boolean.TRUE.equals(progress.getAssigned()))
+                .map(progress -> updateProgress(progress, request));
+    }
+
+    @Transactional
+    public List<DashboardProjectResponse> findLegacyProjectDashboards(String userId) {
+        return findMyProjectDashboards(userId).stream()
+                .map(this::toLegacyProjectResponse)
+                .toList();
+    }
+
+    @Transactional
+    public Optional<ProjectDashboardResponse> findLegacyProjectDashboard(String projectId, String userId) {
+        return projectRepository.findById(projectId).map(project -> {
+            todoProgressSyncService.syncProject(project);
+            TeamProjectDashboardResponse teamDashboard = buildTeamProjectDashboard(project);
+            List<DashboardMemberResponse> members = teamDashboard.getMembers().stream()
+                    .map(this::toLegacyMemberResponse)
+                    .toList();
+
+            String resolvedUserId = normalizeOptionalUserId(userId);
+            DashboardMemberResponse selectedMember = resolveSelectedMember(members, resolvedUserId);
+
+            return ProjectDashboardResponse.builder()
+                    .projectId(project.getId())
+                    .projectName(project.getName())
+                    .selectedUserId(selectedMember.getUserId())
+                    .selectedMemberName(selectedMember.getMemberName())
+                    .selectedMember(selectedMember)
+                    .teamMembers(members)
+                    .build();
+        });
+    }
+
+    private MyProjectDashboardResponse buildMyProjectDashboard(Project project, String userId) {
+        List<TodoMemberProgress> progressRows = todoMemberProgressRepository
+                .findByProjectIdAndUserIdAndAssignedTrue(project.getId(), userId)
+                .stream()
+                .sorted(progressComparator())
+                .toList();
+        List<TodoAssignmentResponse> todos = progressRows.stream()
+                .map(this::toAssignmentResponse)
+                .toList();
+        int completedCount = countCompleted(todos);
+
+        return MyProjectDashboardResponse.builder()
                 .projectId(project.getId())
                 .projectName(project.getName())
+                .userId(userId)
+                .memberName(resolveMemberName(todos, userId))
                 .target(resolveTarget(todos))
                 .totalTodoCount(todos.size())
-                .onTrackTodoCount(onTrackCount)
-                .overdueTodoCount(overdueCount)
-                .progressRate(calculateProgressRate(todos.size(), overdueCount))
+                .completedTodoCount(completedCount)
+                .pendingTodoCount(todos.size() - completedCount)
+                .progressRate(calculateProgressRate(todos.size(), completedCount))
                 .todos(todos)
                 .build();
     }
 
-    private ProjectDashboardResponse buildProjectDashboard(Project project, String selectedMemberName) {
-        List<DashboardTodoResponse> todos = collectTodos(project);
-        Map<String, List<DashboardTodoResponse>> todosByMember = initMemberTodoMap(project.getMembers());
+    private TeamProjectDashboardResponse buildTeamProjectDashboard(Project project) {
+        List<TodoMemberProgress> progressRows = todoMemberProgressRepository.findByProjectIdAndAssignedTrue(project.getId())
+                .stream()
+                .sorted(progressComparator())
+                .toList();
+        Map<String, List<TodoMemberProgress>> progressByUser = initMemberProgressMap(project.getMembers());
 
-        for (DashboardTodoResponse todo : todos) {
-            todosByMember.computeIfAbsent(
-                    normalizeMemberName(todo.getMemberName()),
-                    ignored -> new ArrayList<>()
-            ).add(todo);
+        for (TodoMemberProgress progress : progressRows) {
+            progressByUser.computeIfAbsent(progress.getUserId(), ignored -> new ArrayList<>()).add(progress);
         }
 
-        List<DashboardMemberResponse> teamMembers = todosByMember.entrySet().stream()
-                .map(entry -> buildMemberResponse(entry.getKey(), entry.getValue()))
+        List<TeamMemberProgressResponse> members = progressByUser.entrySet().stream()
+                .map(entry -> buildTeamMemberResponse(entry.getKey(), entry.getValue()))
                 .toList();
-        String resolvedMemberName = selectedMemberName != null
-                ? selectedMemberName
-                : resolveDefaultMemberName(teamMembers);
-        DashboardMemberResponse selectedMember = teamMembers.stream()
-                .filter(member -> member.getMemberName().equals(resolvedMemberName))
-                .findFirst()
-                .orElseGet(() -> buildMemberResponse(resolvedMemberName, List.of()));
 
-        return ProjectDashboardResponse.builder()
+        Map<String, List<TodoMemberProgress>> progressByTodo = new LinkedHashMap<>();
+        for (TodoMemberProgress progress : progressRows) {
+            progressByTodo.computeIfAbsent(progress.getTodo().getId(), ignored -> new ArrayList<>()).add(progress);
+        }
+
+        List<TeamTodoProgressResponse> todos = projectTodoRepository.findByProjectId(project.getId()).stream()
+                .sorted(projectTodoComparator())
+                .map(todo -> buildTeamTodoResponse(todo, progressByTodo.getOrDefault(todo.getId(), List.of())))
+                .toList();
+
+        return TeamProjectDashboardResponse.builder()
                 .projectId(project.getId())
                 .projectName(project.getName())
-                .selectedMemberName(resolvedMemberName)
-                .selectedMember(selectedMember)
-                .teamMembers(teamMembers)
+                .members(members)
+                .todos(todos)
                 .build();
     }
 
-    private List<DashboardTodoResponse> collectTodos(Project project) {
-        List<Minutes> minutesList = minutesRepository.findByProjectIdOrderByCreatedAtDesc(project.getId());
-        List<DashboardTodoResponse> todos = new ArrayList<>();
-
-        for (Minutes minutes : minutesList) {
-            if (minutes.getTodos() == null) {
-                continue;
-            }
-
-            for (TodoData todo : minutes.getTodos()) {
-                todos.add(DashboardTodoResponse.builder()
-                        .projectId(project.getId())
-                        .projectName(project.getName())
-                        .minutesId(minutes.getId())
-                        .minutesTitle(minutes.getTitle())
-                        .memberName(normalizeMemberName(todo.getName()))
-                        .task(todo.getTask())
-                        .deadline(todo.getDeadline())
-                        .status(resolveStatus(todo.getDeadline()))
-                        .build());
-            }
+    private TodoAssignmentResponse updateProgress(TodoMemberProgress progress, TodoProgressUpdateRequest request) {
+        Boolean completed = resolveCompleted(request);
+        if (completed != null) {
+            progress.setCompletedState(completed);
         }
-
-        return todos;
+        return toAssignmentResponse(todoMemberProgressRepository.save(progress));
     }
 
-    private Map<String, List<DashboardTodoResponse>> initMemberTodoMap(List<String> members) {
-        Map<String, List<DashboardTodoResponse>> todosByMember = new LinkedHashMap<>();
+    private Boolean resolveCompleted(TodoProgressUpdateRequest request) {
+        if (request == null) {
+            return null;
+        }
+        if (request.getCompleted() != null) {
+            return request.getCompleted();
+        }
+        if (request.getStatus() == null || request.getStatus().isBlank()) {
+            return null;
+        }
+        String status = request.getStatus().trim().toUpperCase();
+        if (TodoMemberProgress.STATUS_DONE.equals(status)) {
+            return true;
+        }
+        if (TodoMemberProgress.STATUS_TODO.equals(status)) {
+            return false;
+        }
+        throw new IllegalArgumentException("status must be TODO or DONE");
+    }
+
+    private TeamMemberProgressResponse buildTeamMemberResponse(String userId, List<TodoMemberProgress> progressRows) {
+        List<TodoAssignmentResponse> todos = progressRows.stream()
+                .sorted(progressComparator())
+                .map(this::toAssignmentResponse)
+                .toList();
+        int completedCount = countCompleted(todos);
+
+        return TeamMemberProgressResponse.builder()
+                .userId(userId)
+                .memberName(resolveMemberName(todos, userId))
+                .totalTodoCount(todos.size())
+                .completedTodoCount(completedCount)
+                .pendingTodoCount(todos.size() - completedCount)
+                .progressRate(calculateProgressRate(todos.size(), completedCount))
+                .todos(todos)
+                .build();
+    }
+
+    private TeamTodoProgressResponse buildTeamTodoResponse(ProjectTodo todo, List<TodoMemberProgress> progressRows) {
+        List<TodoAssignmentResponse> assignments = progressRows.stream()
+                .sorted(progressComparator())
+                .map(this::toAssignmentResponse)
+                .toList();
+
+        return TeamTodoProgressResponse.builder()
+                .todoId(todo.getId())
+                .projectId(todo.getProject().getId())
+                .projectName(todo.getProject().getName())
+                .minutesId(todo.getMinutes().getId())
+                .minutesTitle(todo.getMinutes().getTitle())
+                .task(todo.getTask())
+                .deadline(todo.getDeadline())
+                .sourceAssignee(todo.getSourceAssignee())
+                .assignments(assignments)
+                .build();
+    }
+
+    private TodoAssignmentResponse toAssignmentResponse(TodoMemberProgress progress) {
+        ProjectTodo todo = progress.getTodo();
+        Project project = progress.getProject() != null ? progress.getProject() : todo.getProject();
+
+        return TodoAssignmentResponse.builder()
+                .assignmentId(progress.getId())
+                .todoId(todo.getId())
+                .projectId(project.getId())
+                .projectName(project.getName())
+                .minutesId(todo.getMinutes().getId())
+                .minutesTitle(todo.getMinutes().getTitle())
+                .userId(progress.getUserId())
+                .memberName(progress.getMemberName())
+                .task(todo.getTask())
+                .deadline(todo.getDeadline())
+                .assigned(progress.getAssigned())
+                .completed(progress.getCompleted())
+                .status(progress.getStatus())
+                .completedAt(progress.getCompletedAt())
+                .deadlineStatus(resolveDeadlineStatus(todo.getDeadline()))
+                .build();
+    }
+
+    private DashboardProjectResponse toLegacyProjectResponse(MyProjectDashboardResponse response) {
+        List<DashboardTodoResponse> todos = response.getTodos().stream()
+                .map(this::toDashboardTodoResponse)
+                .toList();
+
+        return DashboardProjectResponse.builder()
+                .projectId(response.getProjectId())
+                .projectName(response.getProjectName())
+                .userId(response.getUserId())
+                .memberName(response.getMemberName())
+                .target(response.getTarget())
+                .totalTodoCount(response.getTotalTodoCount())
+                .completedTodoCount(response.getCompletedTodoCount())
+                .pendingTodoCount(response.getPendingTodoCount())
+                .onTrackTodoCount(countByDeadlineStatus(todos, ON_TRACK))
+                .overdueTodoCount(countByDeadlineStatus(todos, OVERDUE))
+                .progressRate(response.getProgressRate())
+                .todos(todos)
+                .build();
+    }
+
+    private DashboardMemberResponse toLegacyMemberResponse(TeamMemberProgressResponse response) {
+        List<DashboardTodoResponse> todos = response.getTodos().stream()
+                .map(this::toDashboardTodoResponse)
+                .toList();
+
+        return DashboardMemberResponse.builder()
+                .userId(response.getUserId())
+                .memberName(response.getMemberName())
+                .totalTodoCount(response.getTotalTodoCount())
+                .completedTodoCount(response.getCompletedTodoCount())
+                .pendingTodoCount(response.getPendingTodoCount())
+                .onTrackTodoCount(countByDeadlineStatus(todos, ON_TRACK))
+                .overdueTodoCount(countByDeadlineStatus(todos, OVERDUE))
+                .noDeadlineTodoCount(countByDeadlineStatus(todos, NO_DEADLINE))
+                .unknownDeadlineTodoCount(countByDeadlineStatus(todos, UNKNOWN_DEADLINE))
+                .progressRate(response.getProgressRate())
+                .todos(todos)
+                .build();
+    }
+
+    private DashboardTodoResponse toDashboardTodoResponse(TodoAssignmentResponse response) {
+        return DashboardTodoResponse.builder()
+                .assignmentId(response.getAssignmentId())
+                .todoId(response.getTodoId())
+                .projectId(response.getProjectId())
+                .projectName(response.getProjectName())
+                .minutesId(response.getMinutesId())
+                .minutesTitle(response.getMinutesTitle())
+                .userId(response.getUserId())
+                .memberName(response.getMemberName())
+                .task(response.getTask())
+                .deadline(response.getDeadline())
+                .assigned(response.getAssigned())
+                .completed(response.getCompleted())
+                .status(response.getStatus())
+                .completedAt(response.getCompletedAt())
+                .deadlineStatus(response.getDeadlineStatus())
+                .build();
+    }
+
+    private DashboardMemberResponse resolveSelectedMember(List<DashboardMemberResponse> members, String userId) {
+        if (userId != null) {
+            return members.stream()
+                    .filter(member -> userId.equals(member.getUserId()))
+                    .findFirst()
+                    .orElseGet(() -> emptyLegacyMember(userId));
+        }
+
+        return members.stream()
+                .filter(member -> member.getTotalTodoCount() > 0)
+                .findFirst()
+                .orElseGet(() -> members.stream().findFirst().orElseGet(() -> emptyLegacyMember(UNASSIGNED)));
+    }
+
+    private DashboardMemberResponse emptyLegacyMember(String userId) {
+        return DashboardMemberResponse.builder()
+                .userId(userId)
+                .memberName(userId)
+                .totalTodoCount(0)
+                .completedTodoCount(0)
+                .pendingTodoCount(0)
+                .progressRate(100)
+                .todos(List.of())
+                .build();
+    }
+
+    private Map<String, List<TodoMemberProgress>> initMemberProgressMap(List<String> members) {
+        Map<String, List<TodoMemberProgress>> progressByUser = new LinkedHashMap<>();
         if (members == null) {
-            return todosByMember;
+            return progressByUser;
         }
 
         for (String member : members) {
-            todosByMember.put(normalizeMemberName(member), new ArrayList<>());
+            String normalizedMember = normalizeOptionalUserId(member);
+            if (normalizedMember != null) {
+                progressByUser.putIfAbsent(normalizedMember, new ArrayList<>());
+            }
         }
-        return todosByMember;
+        return progressByUser;
     }
 
-    private DashboardMemberResponse buildMemberResponse(String memberName, List<DashboardTodoResponse> todos) {
-        List<DashboardTodoResponse> sortedTodos = todos.stream()
-                .sorted(todoComparator())
-                .toList();
-        int overdueCount = countByStatus(sortedTodos, OVERDUE);
-        int noDeadlineCount = countByStatus(sortedTodos, NO_DEADLINE);
-        int unknownDeadlineCount = countByStatus(sortedTodos, UNKNOWN_DEADLINE);
-        int onTrackCount = sortedTodos.size() - overdueCount;
-
-        return DashboardMemberResponse.builder()
-                .memberName(memberName)
-                .totalTodoCount(sortedTodos.size())
-                .onTrackTodoCount(onTrackCount)
-                .overdueTodoCount(overdueCount)
-                .noDeadlineTodoCount(noDeadlineCount)
-                .unknownDeadlineTodoCount(unknownDeadlineCount)
-                .progressRate(calculateProgressRate(sortedTodos.size(), overdueCount))
-                .todos(sortedTodos)
-                .build();
-    }
-
-    private String resolveTarget(List<DashboardTodoResponse> todos) {
+    private String resolveTarget(List<TodoAssignmentResponse> todos) {
         return todos.stream()
-                .map(DashboardTodoResponse::getTask)
+                .filter(todo -> !Boolean.TRUE.equals(todo.getCompleted()))
+                .map(TodoAssignmentResponse::getTask)
                 .filter(task -> task != null && !task.isBlank())
                 .findFirst()
-                .orElse("No task");
-    }
-
-    private String resolveDefaultMemberName(List<DashboardMemberResponse> teamMembers) {
-        return teamMembers.stream()
-                .filter(member -> member.getTotalTodoCount() > 0)
-                .map(DashboardMemberResponse::getMemberName)
-                .findFirst()
-                .orElseGet(() -> teamMembers.stream()
-                        .map(DashboardMemberResponse::getMemberName)
+                .orElseGet(() -> todos.stream()
+                        .map(TodoAssignmentResponse::getTask)
+                        .filter(task -> task != null && !task.isBlank())
                         .findFirst()
-                        .orElse(UNASSIGNED));
+                        .orElse("No task"));
     }
 
-    private int countByStatus(List<DashboardTodoResponse> todos, String status) {
+    private String resolveMemberName(List<TodoAssignmentResponse> todos, String userId) {
+        return todos.stream()
+                .map(TodoAssignmentResponse::getMemberName)
+                .filter(memberName -> memberName != null && !memberName.isBlank())
+                .findFirst()
+                .orElse(userId);
+    }
+
+    private int countCompleted(List<TodoAssignmentResponse> todos) {
         return (int) todos.stream()
-                .filter(todo -> status.equals(todo.getStatus()))
+                .filter(todo -> Boolean.TRUE.equals(todo.getCompleted()))
                 .count();
     }
 
-    private int calculateProgressRate(int totalCount, int overdueCount) {
+    private int countByDeadlineStatus(List<DashboardTodoResponse> todos, String status) {
+        return (int) todos.stream()
+                .filter(todo -> status.equals(todo.getDeadlineStatus()))
+                .count();
+    }
+
+    private int calculateProgressRate(int totalCount, int completedCount) {
         if (totalCount == 0) {
             return 100;
         }
-        return (int) Math.round(((double) (totalCount - overdueCount) / totalCount) * 100);
+        return (int) Math.round(((double) completedCount / totalCount) * 100);
     }
 
-    private String resolveStatus(String deadline) {
+    private String resolveDeadlineStatus(String deadline) {
         if (deadline == null || deadline.isBlank()) {
             return NO_DEADLINE;
         }
@@ -202,20 +430,18 @@ public class DashboardService {
         }
     }
 
-    private Comparator<DashboardTodoResponse> todoComparator() {
+    private Comparator<TodoMemberProgress> progressComparator() {
         return Comparator
-                .comparingInt((DashboardTodoResponse todo) -> statusPriority(todo.getStatus()))
-                .thenComparing(todo -> parseDeadlineOrMax(todo.getDeadline()))
-                .thenComparing(DashboardTodoResponse::getTask, Comparator.nullsLast(String::compareTo));
+                .comparingInt((TodoMemberProgress progress) -> Boolean.TRUE.equals(progress.getCompleted()) ? 1 : 0)
+                .thenComparing(progress -> parseDeadlineOrMax(progress.getTodo().getDeadline()))
+                .thenComparing(progress -> progress.getTodo().getTask(), Comparator.nullsLast(String::compareTo))
+                .thenComparing(TodoMemberProgress::getMemberName, Comparator.nullsLast(String::compareTo));
     }
 
-    private int statusPriority(String status) {
-        return switch (status) {
-            case OVERDUE -> 0;
-            case ON_TRACK -> 1;
-            case NO_DEADLINE -> 2;
-            default -> 3;
-        };
+    private Comparator<ProjectTodo> projectTodoComparator() {
+        return Comparator
+                .comparing((ProjectTodo todo) -> todo.getMinutes().getCreatedAt(), Comparator.nullsLast(Comparator.reverseOrder()))
+                .thenComparing(ProjectTodo::getSourceIndex, Comparator.nullsLast(Integer::compareTo));
     }
 
     private LocalDate parseDeadlineOrMax(String deadline) {
@@ -226,18 +452,10 @@ public class DashboardService {
         }
     }
 
-    private String normalizeOptionalMemberName(String name) {
-        if (name == null || name.isBlank()) {
+    private String normalizeOptionalUserId(String userId) {
+        if (userId == null || userId.isBlank()) {
             return null;
         }
-        return normalizeMemberName(name);
-    }
-
-    private String normalizeMemberName(String name) {
-        if (name == null || name.isBlank()) {
-            return UNASSIGNED;
-        }
-        return name.trim();
+        return userId.trim();
     }
 }
-
