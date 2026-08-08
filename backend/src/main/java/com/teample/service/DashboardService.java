@@ -16,6 +16,7 @@ import com.teample.entity.TodoMemberProgress;
 import com.teample.repository.ProjectRepository;
 import com.teample.repository.ProjectTodoRepository;
 import com.teample.repository.TodoMemberProgressRepository;
+import com.teample.exception.TodoAccessDeniedException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -82,14 +83,22 @@ public class DashboardService {
     }
 
     @Transactional
-    public Optional<TodoAssignmentResponse> updateProgressByAssignmentId(String assignmentId, TodoProgressUpdateRequest request) {
+    public Optional<TodoAssignmentResponse> updateProgressByAssignmentId(String assignmentId, String currentUserId, TodoProgressUpdateRequest request) {
+        String resolvedUserId = normalizeOptionalUserId(currentUserId);
+        if (resolvedUserId == null) {
+            return Optional.empty();
+        }
+
         return todoMemberProgressRepository.findById(assignmentId)
-                .map(progress -> updateProgress(progress, request));
+                .map(progress -> {
+                    ensureOwnProgress(progress, resolvedUserId);
+                    return updateProgress(progress, request);
+                });
     }
 
     @Transactional
-    public Optional<TodoAssignmentResponse> updateProgressByTodoAndUser(String todoId, String userId, TodoProgressUpdateRequest request) {
-        String resolvedUserId = normalizeOptionalUserId(userId);
+    public Optional<TodoAssignmentResponse> updateProgressByTodoAndUser(String todoId, String currentUserId, TodoProgressUpdateRequest request) {
+        String resolvedUserId = normalizeOptionalUserId(currentUserId);
         if (resolvedUserId == null) {
             return Optional.empty();
         }
@@ -185,6 +194,12 @@ public class DashboardService {
                 .members(members)
                 .todos(todos)
                 .build();
+    }
+
+    private void ensureOwnProgress(TodoMemberProgress progress, String currentUserId) {
+        if (!currentUserId.equals(progress.getUserId())) {
+            throw new TodoAccessDeniedException("Only the assigned user can update this todo progress.");
+        }
     }
 
     private TodoAssignmentResponse updateProgress(TodoMemberProgress progress, TodoProgressUpdateRequest request) {

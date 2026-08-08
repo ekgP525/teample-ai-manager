@@ -6,16 +6,19 @@ import com.teample.dto.dashboard.ProjectDashboardResponse;
 import com.teample.dto.dashboard.TeamProjectDashboardResponse;
 import com.teample.dto.dashboard.TodoAssignmentResponse;
 import com.teample.dto.dashboard.TodoProgressUpdateRequest;
+import com.teample.exception.TodoAccessDeniedException;
 import com.teample.service.DashboardService;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 
@@ -24,26 +27,28 @@ import java.util.List;
 @RequestMapping("/api")
 public class DashboardController {
 
+    private static final String CURRENT_USER_ID_ATTRIBUTE = "currentUserId";
+
     private final DashboardService dashboardService;
 
     @GetMapping("/dashboard/projects")
-    public ResponseEntity<List<DashboardProjectResponse>> getProjectDashboards(
-            @RequestParam(required = false) String userId,
-            @RequestParam(required = false) String memberName) {
-        return ResponseEntity.ok(dashboardService.findLegacyProjectDashboards(resolveUserId(userId, memberName)));
+    public ResponseEntity<List<DashboardProjectResponse>> getProjectDashboards(HttpServletRequest request) {
+        String currentUserId = currentUserId(request);
+        return ResponseEntity.ok(dashboardService.findLegacyProjectDashboards(currentUserId));
     }
 
     @GetMapping("/dashboard/projects/my")
-    public ResponseEntity<List<MyProjectDashboardResponse>> getMyProjectDashboards(@RequestParam String userId) {
-        return ResponseEntity.ok(dashboardService.findMyProjectDashboards(userId));
+    public ResponseEntity<List<MyProjectDashboardResponse>> getMyProjectDashboards(HttpServletRequest request) {
+        String currentUserId = currentUserId(request);
+        return ResponseEntity.ok(dashboardService.findMyProjectDashboards(currentUserId));
     }
 
     @GetMapping("/projects/{projectId}/dashboard")
     public ResponseEntity<ProjectDashboardResponse> getProjectDashboard(
             @PathVariable String projectId,
-            @RequestParam(required = false) String userId,
-            @RequestParam(required = false) String memberName) {
-        return dashboardService.findLegacyProjectDashboard(projectId, resolveUserId(userId, memberName))
+            HttpServletRequest request) {
+        String currentUserId = currentUserId(request);
+        return dashboardService.findLegacyProjectDashboard(projectId, currentUserId)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
@@ -51,14 +56,18 @@ public class DashboardController {
     @GetMapping("/projects/{projectId}/dashboard/my")
     public ResponseEntity<MyProjectDashboardResponse> getMyProjectDashboard(
             @PathVariable String projectId,
-            @RequestParam String userId) {
-        return dashboardService.findMyProjectDashboard(projectId, userId)
+            HttpServletRequest request) {
+        String currentUserId = currentUserId(request);
+        return dashboardService.findMyProjectDashboard(projectId, currentUserId)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
 
     @GetMapping("/projects/{projectId}/dashboard/team")
-    public ResponseEntity<TeamProjectDashboardResponse> getTeamProjectDashboard(@PathVariable String projectId) {
+    public ResponseEntity<TeamProjectDashboardResponse> getTeamProjectDashboard(
+            @PathVariable String projectId,
+            HttpServletRequest request) {
+        currentUserId(request);
         return dashboardService.findTeamProjectDashboard(projectId)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
@@ -67,34 +76,45 @@ public class DashboardController {
     @PatchMapping("/todo-assignments/{assignmentId}")
     public ResponseEntity<TodoAssignmentResponse> updateTodoAssignmentProgress(
             @PathVariable String assignmentId,
-            @RequestBody TodoProgressUpdateRequest request) {
+            @RequestBody TodoProgressUpdateRequest request,
+            HttpServletRequest servletRequest) {
+        String currentUserId = currentUserId(servletRequest);
         try {
-            return dashboardService.updateProgressByAssignmentId(assignmentId, request)
+            return dashboardService.updateProgressByAssignmentId(assignmentId, currentUserId, request)
                     .map(ResponseEntity::ok)
                     .orElse(ResponseEntity.notFound().build());
+        } catch (TodoAccessDeniedException e) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, e.getMessage());
         } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().build();
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
         }
     }
 
     @PatchMapping("/todos/{todoId}/progress")
     public ResponseEntity<TodoAssignmentResponse> updateMyTodoProgress(
             @PathVariable String todoId,
-            @RequestParam String userId,
-            @RequestBody TodoProgressUpdateRequest request) {
+            @RequestBody TodoProgressUpdateRequest request,
+            HttpServletRequest servletRequest) {
+        String currentUserId = currentUserId(servletRequest);
         try {
-            return dashboardService.updateProgressByTodoAndUser(todoId, userId, request)
+            return dashboardService.updateProgressByTodoAndUser(todoId, currentUserId, request)
                     .map(ResponseEntity::ok)
                     .orElse(ResponseEntity.notFound().build());
         } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().build();
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
         }
     }
 
-    private String resolveUserId(String userId, String memberName) {
-        if (userId != null && !userId.isBlank()) {
-            return userId;
+    private String currentUserId(HttpServletRequest request) {
+        Object value = request.getAttribute(CURRENT_USER_ID_ATTRIBUTE);
+        if (value == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Current user is not resolved.");
         }
-        return memberName;
+
+        String currentUserId = value.toString().trim();
+        if (currentUserId.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Current user is empty.");
+        }
+        return currentUserId;
     }
 }
