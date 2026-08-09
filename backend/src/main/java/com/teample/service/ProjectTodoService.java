@@ -5,7 +5,7 @@ import com.teample.dto.TodoAssigneeResponse;
 import com.teample.entity.*;
 import com.teample.repository.MinutesRepository;
 import com.teample.repository.ProjectRepository;
-import com.teample.repository.ProjectTodoRepository;
+import com.teample.repository.IntegratedTodoRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -24,7 +24,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class ProjectTodoService {
 
-    private final ProjectTodoRepository todoRepository;
+    private final IntegratedTodoRepository todoRepository;
     private final ProjectRepository projectRepository;
     private final MinutesRepository minutesRepository;
 
@@ -54,14 +54,14 @@ public class ProjectTodoService {
 
         List<TodoData> sourceTodos = minutes.getTodos() != null
                 ? minutes.getTodos() : Collections.emptyList();
-        Map<Integer, ProjectTodo> existingByIndex = todoRepository
+        Map<Integer, IntegratedTodo> existingByIndex = todoRepository
                 .findByMinutesIdOrderBySourceIndexAsc(minutes.getId())
                 .stream()
                 .filter(todo -> todo.getSourceIndex() != null)
-                .collect(Collectors.toMap(ProjectTodo::getSourceIndex, Function.identity(), (first, ignored) -> first));
+                .collect(Collectors.toMap(IntegratedTodo::getSourceIndex, Function.identity(), (first, ignored) -> first));
 
         int nextPriority = todoRepository.findMaxPriorityOrderByProjectId(minutes.getProject().getId());
-        List<ProjectTodo> changed = new ArrayList<>();
+        List<IntegratedTodo> changed = new ArrayList<>();
 
         for (int index = 0; index < sourceTodos.size(); index++) {
             TodoData source = sourceTodos.get(index);
@@ -71,9 +71,9 @@ public class ProjectTodoService {
 
             String assigneeName = source.getName() != null && !source.getName().isBlank()
                     ? source.getName().trim() : "미지정";
-            ProjectTodo todo = existingByIndex.get(index);
+            IntegratedTodo todo = existingByIndex.get(index);
             if (todo == null) {
-                todo = ProjectTodo.builder()
+                todo = IntegratedTodo.builder()
                         .project(minutes.getProject())
                         .minutes(minutes)
                         .sourceIndex(index)
@@ -96,7 +96,7 @@ public class ProjectTodoService {
 
     @Transactional
     public ProjectTodoResponse updateStatus(String projectId, String todoId, TodoStatus status) {
-        ProjectTodo todo = findOwnedTodo(projectId, todoId);
+        IntegratedTodo todo = findOwnedTodo(projectId, todoId);
         todo.setStatus(status);
         todo.setCompletedAt(status == TodoStatus.COMPLETED ? LocalDateTime.now() : null);
         return toResponse(todo);
@@ -108,10 +108,10 @@ public class ProjectTodoService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Todo order is required");
         }
 
-        List<ProjectTodo> activeTodos = todoRepository
+        List<IntegratedTodo> activeTodos = todoRepository
                 .findByProjectIdAndStatusOrderByPriorityOrderAscCreatedAtAsc(projectId, TodoStatus.TODO);
-        Map<String, ProjectTodo> byId = activeTodos.stream()
-                .collect(Collectors.toMap(ProjectTodo::getId, Function.identity()));
+        Map<String, IntegratedTodo> byId = activeTodos.stream()
+                .collect(Collectors.toMap(IntegratedTodo::getId, Function.identity()));
 
         if (orderedTodoIds.size() != activeTodos.size()
                 || !byId.keySet().equals(new HashSet<>(orderedTodoIds))) {
@@ -128,7 +128,7 @@ public class ProjectTodoService {
                 .toList();
     }
 
-    private ProjectTodo findOwnedTodo(String projectId, String todoId) {
+    private IntegratedTodo findOwnedTodo(String projectId, String todoId) {
         return todoRepository.findByIdAndProjectId(todoId, projectId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Todo not found"));
     }
@@ -149,7 +149,7 @@ public class ProjectTodoService {
         }
     }
 
-    private ProjectTodoResponse toResponse(ProjectTodo todo) {
+    private ProjectTodoResponse toResponse(IntegratedTodo todo) {
         return ProjectTodoResponse.builder()
                 .id(todo.getId())
                 .content(todo.getContent())

@@ -3,23 +3,24 @@ package com.teample.service;
 import com.teample.dto.ProjectRequest;
 import com.teample.dto.ProjectResponse;
 import com.teample.entity.Project;
-import com.teample.repository.ProjectRepository;
 import com.teample.entity.ProjectStatus;
+import com.teample.repository.ProjectRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
-import java.util.Optional;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Collections;
+import java.util.List;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
 public class ProjectService {
 
     private final ProjectRepository projectRepository;
+
     public ProjectResponse create(ProjectRequest request) {
         Project project = Project.builder()
                 .name(request.getName())
@@ -73,15 +74,15 @@ public class ProjectService {
         }
     }
 
-    private ProjectResponse toResponse(Project p) {
+    private ProjectResponse toResponse(Project project) {
         return ProjectResponse.builder()
-                .id(p.getId())
-                .name(p.getName())
-                .members(p.getMembers() != null ? p.getMembers() : Collections.emptyList())
-                .createdAt(p.getCreatedAt() != null ? p.getCreatedAt().toString() : "")
-                .disposalDeadline(p.getDisposalDeadline())
-                .status(p.getStatus() != null ? p.getStatus() : ProjectStatus.ACTIVE)
-                .disposedAt(p.getDisposedAt() != null ? p.getDisposedAt().toString() : null)
+                .id(project.getId())
+                .name(project.getName())
+                .members(project.getMembers() != null ? project.getMembers() : Collections.emptyList())
+                .createdAt(project.getCreatedAt() != null ? project.getCreatedAt().toString() : "")
+                .disposalDeadline(project.getDisposalDeadline())
+                .status(project.getStatus() != null ? project.getStatus() : ProjectStatus.ACTIVE)
+                .disposedAt(project.getDisposedAt() != null ? project.getDisposedAt().toString() : null)
                 .build();
     }
 }

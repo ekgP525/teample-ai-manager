@@ -4,7 +4,7 @@ import com.teample.dto.ProjectTodoResponse;
 import com.teample.entity.*;
 import com.teample.repository.MinutesRepository;
 import com.teample.repository.ProjectRepository;
-import com.teample.repository.ProjectTodoRepository;
+import com.teample.repository.IntegratedTodoRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -19,14 +19,14 @@ import static org.mockito.Mockito.*;
 
 class ProjectTodoServiceTest {
 
-    private ProjectTodoRepository todoRepository;
+    private IntegratedTodoRepository todoRepository;
     private ProjectRepository projectRepository;
     private MinutesRepository minutesRepository;
     private ProjectTodoService service;
 
     @BeforeEach
     void setUp() {
-        todoRepository = mock(ProjectTodoRepository.class);
+        todoRepository = mock(IntegratedTodoRepository.class);
         projectRepository = mock(ProjectRepository.class);
         minutesRepository = mock(MinutesRepository.class);
         service = new ProjectTodoService(todoRepository, projectRepository, minutesRepository);
@@ -49,9 +49,9 @@ class ProjectTodoServiceTest {
 
         service.synchronizeFromMinutes(minutes);
 
-        ArgumentCaptor<List<ProjectTodo>> captor = ArgumentCaptor.forClass(List.class);
+        ArgumentCaptor<List<IntegratedTodo>> captor = ArgumentCaptor.forClass(List.class);
         verify(todoRepository).saveAll(captor.capture());
-        List<ProjectTodo> saved = captor.getValue();
+        List<IntegratedTodo> saved = captor.getValue();
         assertThat(saved).hasSize(2);
         assertThat(saved.get(0).getAssigneeName()).isEqualTo("홍길동");
         assertThat(saved.get(0).getContent()).isEqualTo("발표 자료 초안 작성");
@@ -69,7 +69,7 @@ class ProjectTodoServiceTest {
                 .project(project)
                 .todos(List.of(new TodoData("홍길동", "수정된 업무", "2026-08-13")))
                 .build();
-        ProjectTodo existing = ProjectTodo.builder()
+        IntegratedTodo existing = IntegratedTodo.builder()
                 .id("todo-id")
                 .project(project)
                 .minutes(minutes)
@@ -84,7 +84,7 @@ class ProjectTodoServiceTest {
 
         service.synchronizeFromMinutes(minutes);
 
-        ArgumentCaptor<List<ProjectTodo>> captor = ArgumentCaptor.forClass(List.class);
+        ArgumentCaptor<List<IntegratedTodo>> captor = ArgumentCaptor.forClass(List.class);
         verify(todoRepository).saveAll(captor.capture());
         assertThat(captor.getValue()).containsExactly(existing);
         assertThat(existing.getContent()).isEqualTo("수정된 업무");
@@ -93,7 +93,7 @@ class ProjectTodoServiceTest {
 
     @Test
     void completingAndRestoringTodoOnlyChangesStatus() {
-        ProjectTodo todo = ProjectTodo.builder()
+        IntegratedTodo todo = IntegratedTodo.builder()
                 .id("todo-id")
                 .project(Project.builder().id("project-id").build())
                 .content("업무")
@@ -119,9 +119,9 @@ class ProjectTodoServiceTest {
     @Test
     void reorderPersistsPriorityOrderForEveryActiveTodo() {
         Project project = Project.builder().id("project-id").build();
-        ProjectTodo first = ProjectTodo.builder().id("first").project(project)
+        IntegratedTodo first = IntegratedTodo.builder().id("first").project(project)
                 .content("first").assigneeName("A").status(TodoStatus.TODO).priorityOrder(1).build();
-        ProjectTodo second = ProjectTodo.builder().id("second").project(project)
+        IntegratedTodo second = IntegratedTodo.builder().id("second").project(project)
                 .content("second").assigneeName("B").status(TodoStatus.TODO).priorityOrder(2).build();
         when(todoRepository.findByProjectIdAndStatusOrderByPriorityOrderAscCreatedAtAsc(
                 "project-id", TodoStatus.TODO)).thenReturn(List.of(first, second));

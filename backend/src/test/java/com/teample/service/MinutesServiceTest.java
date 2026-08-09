@@ -25,7 +25,7 @@ class MinutesServiceTest {
         when(minutesRepository.findById("minutes-id")).thenReturn(Optional.of(minutes));
         MinutesService service = new MinutesService(
                 minutesRepository, mock(ProjectRepository.class), mock(ClaudeService.class),
-                mock(ProjectTodoService.class));
+                mock(ProjectTodoService.class), mock(TodoProgressSyncService.class));
 
         MinutesResponse response = service.findById("minutes-id").orElseThrow();
 
@@ -45,7 +45,8 @@ class MinutesServiceTest {
         Project project = Project.builder().status(ProjectStatus.DISPOSED).build();
         when(projectRepository.findById("project-id")).thenReturn(Optional.of(project));
         MinutesService service = new MinutesService(
-                minutesRepository, projectRepository, claudeService, mock(ProjectTodoService.class));
+                minutesRepository, projectRepository, claudeService,
+                mock(ProjectTodoService.class), mock(TodoProgressSyncService.class));
 
         MinutesRequest request = new MinutesRequest();
         request.setMeetingDate(LocalDate.now().toString());

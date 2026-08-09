@@ -3,15 +3,14 @@ package com.teample.entity;
 import jakarta.persistence.*;
 import lombok.*;
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Entity
 @Table(
-        name = "integrated_todos",
+        name = "project_todos",
         uniqueConstraints = @UniqueConstraint(
-                name = "uk_integrated_todos_minutes_source",
-                columnNames = {"minutes_id", "source_index"}
+                name = "uk_project_todo_source",
+                columnNames = {"project_id", "minutes_id", "source_index"}
         )
 )
 @Getter
@@ -25,44 +24,29 @@ public class ProjectTodo {
     @GeneratedValue(strategy = GenerationType.UUID)
     private String id;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "project_id", nullable = false)
     private Project project;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "minutes_id")
+    @JoinColumn(name = "minutes_id", nullable = false)
     private Minutes minutes;
 
-    @Column(name = "source_index")
+    @Column(name = "source_index", nullable = false)
     private Integer sourceIndex;
 
-    @Column(nullable = false, columnDefinition = "text")
-    private String content;
+    @Column(name = "source_assignee")
+    private String sourceAssignee;
 
-    @Column(name = "assignee_id")
-    private String assigneeId;
+    @Column(columnDefinition = "text", nullable = false)
+    private String task;
 
-    @Column(name = "assignee_name", nullable = false)
-    private String assigneeName;
+    private String deadline;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    @Builder.Default
-    private TodoStatus status = TodoStatus.TODO;
-
-    @Column(name = "priority_order", nullable = false)
-    private Integer priorityOrder;
-
-    @Column(name = "due_date")
-    private LocalDate dueDate;
-
-    @Column(name = "completed_at")
-    private LocalDateTime completedAt;
-
-    @Column(name = "created_at", nullable = false, updatable = false)
+    @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 
-    @Column(name = "updated_at", nullable = false)
+    @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
     @PrePersist
