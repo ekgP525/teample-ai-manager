@@ -3,10 +3,13 @@ package com.teample.service;
 import com.teample.dto.MinutesRequest;
 import com.teample.dto.MinutesResponse;
 import com.teample.dto.MinutesSummary;
+import com.teample.dto.MinutesEvidence;
 import com.teample.dto.TodoItem;
 import com.teample.entity.Minutes;
 import com.teample.entity.Project;
 import com.teample.entity.TodoData;
+import com.teample.entity.EvidenceData;
+import com.teample.entity.ProjectStatus;
 import com.teample.repository.MinutesRepository;
 import com.teample.repository.ProjectRepository;
 import lombok.RequiredArgsConstructor;
@@ -16,6 +19,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Collections;
 
 @Service
 @RequiredArgsConstructor
@@ -24,10 +28,17 @@ public class MinutesService {
     private final MinutesRepository minutesRepository;
     private final ProjectRepository projectRepository;
     private final ClaudeService claudeService;
+    private final ProjectTodoService projectTodoService;
 
     public MinutesResponse create(String projectId, MinutesRequest request) {
         Project project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new RuntimeException("프로젝트를 찾을 수 없습니다."));
+
+        if (project.getStatus() == ProjectStatus.DISPOSED
+                || (project.getDisposalDeadline() != null
+                && project.getDisposalDeadline().isBefore(LocalDate.now()))) {
+            throw new IllegalStateException("Disposed projects cannot create minutes.");
+        }
 
         ClaudeService.MinutesResult result = claudeService.analyze(
                 request.getRawText(),
@@ -47,9 +58,11 @@ public class MinutesService {
                 .pending(result.pending())
                 .todos(result.todos())
                 .nextAgenda(result.nextAgenda())
+                .evidence(result.evidence())
                 .build();
 
         Minutes saved = minutesRepository.save(minutes);
+        projectTodoService.synchronizeFromMinutes(saved);
         return toResponse(saved);
     }
 
@@ -82,6 +95,7 @@ public class MinutesService {
                     .toList());
             minutes.setNextAgenda(new ArrayList<>(request.getNextAgenda()));
             Minutes saved = minutesRepository.save(minutes);
+            projectTodoService.synchronizeFromMinutes(saved);
             return toResponse(saved);
         });
     }
@@ -98,13 +112,33 @@ public class MinutesService {
                 .id(m.getId())
                 .title(m.getTitle())
                 .topic(m.getTopic())
-                .discussions(m.getDiscussions())
-                .decisions(m.getDecisions())
-                .pending(m.getPending())
-                .todos(m.getTodos().stream()
+                .discussions(safeList(m.getDiscussions()))
+                .decisions(safeList(m.getDecisions()))
+                .pending(safeList(m.getPending()))
+                .todos(safeList(m.getTodos()).stream()
                         .map(t -> new TodoItem(t.getName(), t.getTask(), t.getDeadline()))
                         .toList())
-                .nextAgenda(m.getNextAgenda())
+                .nextAgenda(safeList(m.getNextAgenda()))
+                .evidence(toEvidenceResponse(m.getEvidence()))
                 .build();
+    }
+
+    private MinutesEvidence toEvidenceResponse(EvidenceData evidence) {
+        if (evidence == null) {
+            return null;
+        }
+        return MinutesEvidence.builder()
+                .title(evidence.getTitle())
+                .topic(evidence.getTopic())
+                .discussions(safeList(evidence.getDiscussions()))
+                .decisions(safeList(evidence.getDecisions()))
+                .pending(safeList(evidence.getPending()))
+                .todos(safeList(evidence.getTodos()))
+                .nextAgenda(safeList(evidence.getNextAgenda()))
+                .build();
+    }
+
+    private <T> List<T> safeList(List<T> value) {
+        return value != null ? value : Collections.emptyList();
     }
 }

@@ -59,6 +59,10 @@ public class Minutes {
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column
+    private EvidenceData evidence;
+
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();

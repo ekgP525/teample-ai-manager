@@ -6,6 +6,7 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 import java.time.LocalDateTime;
+import java.time.LocalDate;
 import java.util.List;
 
 @Entity
@@ -30,6 +31,17 @@ public class Project {
 
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
+
+    @Column(name = "disposal_deadline")
+    private LocalDate disposalDeadline;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    @Builder.Default
+    private ProjectStatus status = ProjectStatus.ACTIVE;
+
+    @Column(name = "disposed_at")
+    private LocalDateTime disposedAt;
 
     @PrePersist
     protected void onCreate() {

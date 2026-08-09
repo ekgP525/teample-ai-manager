@@ -5,6 +5,7 @@ import jakarta.validation.constraints.NotEmpty;
 import lombok.Data;
 
 import java.util.List;
+import java.time.LocalDate;
 
 @Data
 public class ProjectRequest {
@@ -14,4 +15,6 @@ public class ProjectRequest {
 
     @NotEmpty
     private List<String> members;
+
+    private LocalDate disposalDeadline;
 }
