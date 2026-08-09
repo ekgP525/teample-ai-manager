@@ -9,7 +9,8 @@ import java.util.Optional;
 public interface ProjectTodoRepository extends JpaRepository<ProjectTodo, String> {
     List<ProjectTodo> findByProjectId(String projectId);
     List<ProjectTodo> findByMinutesId(String minutesId);
-    Optional<ProjectTodo> findByProjectIdAndMinutesIdAndSourceIndex(String projectId, String minutesId, Integer sourceIndex);
+    Optional<ProjectTodo> findByProjectIdAndMinutesIdAndSourceIndex(
+            String projectId, String minutesId, Integer sourceIndex);
     void deleteByMinutesId(String minutesId);
     void deleteByProjectId(String projectId);
 }

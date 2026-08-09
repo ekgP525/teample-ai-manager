@@ -11,14 +11,12 @@ import java.util.List;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class MinutesResponse {
-    private String id;
+public class MinutesEvidence {
     private String title;
     private String topic;
     private List<String> discussions;
     private List<String> decisions;
     private List<String> pending;
-    private List<TodoItem> todos;
+    private List<String> todos;
     private List<String> nextAgenda;
-    private MinutesEvidence evidence;
 }

@@ -6,6 +6,7 @@ import com.anthropic.models.messages.*;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.teample.entity.TodoData;
+import com.teample.entity.EvidenceData;
 import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -73,7 +74,16 @@ public class ClaudeService {
                     {"name": "담당자 이름", "task": "업무 내용", "deadline": "마감일"},
                     ...
                   ],
-                  "nextAgenda": ["다음 회의에서 확인할 내용 1", ...]
+                  "nextAgenda": ["다음 회의에서 확인할 내용 1", ...],
+                  "evidence": {
+                    "title": "제목의 근거가 된 원문 인용",
+                    "topic": "주제의 근거가 된 원문 인용",
+                    "discussions": ["각 discussions 항목과 같은 순서의 원문 인용"],
+                    "decisions": ["각 decisions 항목과 같은 순서의 원문 인용"],
+                    "pending": ["각 pending 항목과 같은 순서의 원문 인용"],
+                    "todos": ["각 todos 항목과 같은 순서의 원문 인용"],
+                    "nextAgenda": ["각 nextAgenda 항목과 같은 순서의 원문 인용"]
+                  }
                 }
 
                 규칙:
@@ -81,13 +91,16 @@ public class ClaudeService {
                 - 담당자 이름은 팀원 목록에서 매칭
                 - 마감일은 대화에서 언급된 날짜 사용, 없으면 "미정"
                 - 배열이 비어있으면 빈 배열 [] 사용
+                - evidence에는 반드시 아래 대화 원문에 실제로 존재하는 짧은 문장을 그대로 인용
+                - evidence 배열은 대응하는 결과 배열과 길이와 순서를 동일하게 유지
+                - 근거를 찾을 수 없는 항목의 evidence 값은 빈 문자열 사용
 
                 카카오톡 대화:
                 %s
                 """.formatted(subject, String.join(", ", members), rawText);
     }
 
-    private MinutesResult parseResponse(String responseText) {
+    MinutesResult parseResponse(String responseText) {
         try {
             int start = responseText.indexOf('{');
             int end = responseText.lastIndexOf('}');
@@ -114,7 +127,18 @@ public class ClaudeService {
                 ));
             }
 
-            return new MinutesResult(title, topic, discussions, decisions, pending, todos, nextAgenda);
+            JsonNode evidenceNode = root.path("evidence");
+            EvidenceData evidence = new EvidenceData(
+                    evidenceNode.path("title").asText(""),
+                    evidenceNode.path("topic").asText(""),
+                    jsonArrayToList(evidenceNode.path("discussions")),
+                    jsonArrayToList(evidenceNode.path("decisions")),
+                    jsonArrayToList(evidenceNode.path("pending")),
+                    jsonArrayToList(evidenceNode.path("todos")),
+                    jsonArrayToList(evidenceNode.path("nextAgenda"))
+            );
+
+            return new MinutesResult(title, topic, discussions, decisions, pending, todos, nextAgenda, evidence);
         } catch (Exception e) {
             throw new RuntimeException("Claude 응답 파싱 실패: " + e.getMessage(), e);
         }
@@ -137,6 +161,7 @@ public class ClaudeService {
             List<String> decisions,
             List<String> pending,
             List<TodoData> todos,
-            List<String> nextAgenda
+            List<String> nextAgenda,
+            EvidenceData evidence
     ) {}
 }
