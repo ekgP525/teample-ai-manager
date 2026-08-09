@@ -1,78 +1,232 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
-import type { Project, MinutesSummary } from "@/types/minutes";
+import { useEffect, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { ApiError } from "@/lib/api/client";
+import { getProjectMinutes } from "@/lib/api/minutes";
+import { deleteProject, getProject } from "@/lib/api/projects";
+import type { MinutesSummary, Project } from "@/types/minutes";
+
+async function fetchProjectData(projectId: string, signal?: AbortSignal) {
+  const [project, minutesList] = await Promise.all([
+    getProject(projectId, signal),
+    getProjectMinutes(projectId, signal),
+  ]);
+
+  return { project, minutesList };
+}
 
 export default function ProjectDetailPage() {
   const router = useRouter();
   const { id } = useParams<{ id: string }>();
   const [project, setProject] = useState<Project | null>(null);
   const [minutesList, setMinutesList] = useState<MinutesSummary[]>([]);
+  const [loadedProjectId, setLoadedProjectId] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [projectNotFound, setProjectNotFound] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   useEffect(() => {
-    fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/projects/${id}`)
-      .then((res) => res.json())
-      .then(setProject)
-      .catch(() => {});
+    const controller = new AbortController();
 
-    fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/projects/${id}/minutes`)
-      .then((res) => res.json())
-      .then(setMinutesList)
-      .catch(() => {});
+    void fetchProjectData(id, controller.signal)
+      .then((data) => {
+        setProject(data.project);
+        setMinutesList(data.minutesList);
+        setLoadError("");
+        setProjectNotFound(false);
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+
+        setProject(null);
+        setMinutesList([]);
+
+        if (error instanceof ApiError && error.status === 404) {
+          setProjectNotFound(true);
+          setLoadError("");
+          return;
+        }
+
+        setProjectNotFound(false);
+        setLoadError(
+          error instanceof Error
+            ? error.message
+            : "프로젝트를 불러오지 못했습니다."
+        );
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setLoadedProjectId(id);
+          setIsLoading(false);
+        }
+      });
+
+    return () => controller.abort();
   }, [id]);
 
+  const handleRetry = async () => {
+    setIsLoading(true);
+    setLoadError("");
+    setProjectNotFound(false);
+
+    try {
+      const data = await fetchProjectData(id);
+      setProject(data.project);
+      setMinutesList(data.minutesList);
+    } catch (error) {
+      setProject(null);
+      setMinutesList([]);
+
+      if (error instanceof ApiError && error.status === 404) {
+        setProjectNotFound(true);
+      } else {
+        setLoadError(
+          error instanceof Error
+            ? error.message
+            : "프로젝트를 불러오지 못했습니다."
+        );
+      }
+    } finally {
+      setLoadedProjectId(id);
+      setIsLoading(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    setIsDeleting(true);
+    setDeleteError("");
+
+    try {
+      await deleteProject(id);
+      router.push("/projects");
+    } catch (error) {
+      setDeleteError(
+        error instanceof Error
+          ? error.message
+          : "프로젝트를 삭제하지 못했습니다."
+      );
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const pageIsLoading = isLoading || loadedProjectId !== id;
+
+  if (pageIsLoading) {
+    return (
+      <main className="flex flex-1 items-center justify-center px-4 py-12">
+        <p aria-live="polite" className="text-zinc-500">
+          프로젝트를 불러오는 중...
+        </p>
+      </main>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <main className="flex flex-1 items-center justify-center px-4 py-12">
+        <div
+          role="alert"
+          className="w-full max-w-lg rounded-lg border border-red-200 bg-red-50 p-8 text-center dark:border-red-900 dark:bg-red-950"
+        >
+          <p className="text-sm text-red-600 dark:text-red-400">{loadError}</p>
+          <button
+            type="button"
+            onClick={() => void handleRetry()}
+            className="mt-4 rounded-lg border border-red-300 px-3 py-1.5 text-sm text-red-600 transition-colors hover:bg-red-100 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900"
+          >
+            다시 시도
+          </button>
+        </div>
+      </main>
+    );
+  }
+
+  if (projectNotFound || !project) {
+    return (
+      <main className="flex flex-1 items-center justify-center px-4 py-12">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold">프로젝트를 찾을 수 없습니다.</h1>
+          <p className="mt-2 text-sm text-zinc-500">
+            삭제되었거나 잘못된 주소일 수 있습니다.
+          </p>
+          <Link
+            href="/projects"
+            className="mt-6 inline-block rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+          >
+            프로젝트 목록으로
+          </Link>
+        </div>
+      </main>
+    );
+  }
+
   return (
-    <main className="flex flex-1 flex-col items-center px-4 py-12">
+    <main className="flex flex-1 flex-col items-center px-4 py-8 sm:py-12">
       <div className="w-full max-w-2xl">
-        {project && (
-          <div className="mb-8 flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold">{project.name}</h1>
-              <p className="text-sm text-zinc-500">
-                팀원: {project.members.join(", ")}
-              </p>
-            </div>
-            <div className="flex gap-2">
-              <Link
-                href={`/projects/${id}/new`}
-                className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-              >
-                새 회의록
-              </Link>
-              {!confirmDelete ? (
-                <button
-                  onClick={() => setConfirmDelete(true)}
-                  className="rounded-lg border border-red-300 px-3 py-2 text-sm text-red-500 transition-colors hover:bg-red-50 dark:border-red-800 dark:hover:bg-red-950"
-                >
-                  삭제
-                </button>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={async () => {
-                      const res = await fetch(
-                        `${process.env.NEXT_PUBLIC_API_URL}/api/projects/${id}`,
-                        { method: "DELETE" }
-                      );
-                      if (res.ok) router.push("/projects");
-                    }}
-                    className="rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700"
-                  >
-                    확인
-                  </button>
-                  <button
-                    onClick={() => setConfirmDelete(false)}
-                    className="rounded-lg border border-zinc-300 px-3 py-2 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
-                  >
-                    취소
-                  </button>
-                </div>
-              )}
-            </div>
+        <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <h1 className="break-words text-2xl font-bold">{project.name}</h1>
+            <p className="break-words text-sm text-zinc-500">
+              팀원: {project.members.join(", ")}
+            </p>
           </div>
+          <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:shrink-0">
+            <Link
+              href={`/projects/${id}/new`}
+              className="flex-1 rounded-lg bg-zinc-900 px-4 py-2 text-center text-sm font-medium text-white transition-colors hover:bg-zinc-800 sm:flex-none dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+            >
+              새 회의록
+            </Link>
+            {!confirmDelete ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setConfirmDelete(true);
+                  setDeleteError("");
+                }}
+                className="rounded-lg border border-red-300 px-3 py-2 text-sm text-red-500 transition-colors hover:bg-red-50 dark:border-red-800 dark:hover:bg-red-950"
+              >
+                삭제
+              </button>
+            ) : (
+              <div className="flex flex-1 items-center gap-2 sm:flex-none">
+                <button
+                  type="button"
+                  onClick={() => void handleDelete()}
+                  disabled={isDeleting}
+                  className="flex-1 rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none"
+                >
+                  {isDeleting ? "삭제 중..." : "확인"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setConfirmDelete(false);
+                    setDeleteError("");
+                  }}
+                  disabled={isDeleting}
+                  className="flex-1 rounded-lg border border-zinc-300 px-3 py-2 text-sm hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none dark:border-zinc-700 dark:hover:bg-zinc-800"
+                >
+                  취소
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {deleteError && (
+          <p
+            role="alert"
+            className="mb-6 rounded-lg bg-red-50 px-4 py-2.5 text-sm text-red-600 dark:bg-red-950 dark:text-red-400"
+          >
+            {deleteError}
+          </p>
         )}
 
         {minutesList.length > 0 ? (
@@ -85,12 +239,14 @@ export default function ProjectDetailPage() {
                   href={`/projects/${id}/minutes/${item.id}`}
                   className="block rounded-lg border border-zinc-200 p-3 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
                 >
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <p className="font-medium">{item.title || item.topic}</p>
-                      <p className="text-xs text-zinc-500">{item.meetingDate}</p>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="break-words font-medium">{item.title || item.topic}</p>
+                      <p className="text-xs text-zinc-500">
+                        {item.meetingDate}
+                      </p>
                     </div>
-                    <span className="text-xs text-zinc-400">
+                    <span className="shrink-0 text-xs text-zinc-400">
                       {item.createdAt?.slice(0, 10)}
                     </span>
                   </div>
