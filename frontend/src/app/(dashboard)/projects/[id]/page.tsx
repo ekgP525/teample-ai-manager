@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { ProjectTodoBoard } from "@/components/project-todo-board";
 import { ApiError } from "@/lib/api/client";
 import { getProjectMinutes } from "@/lib/api/minutes";
 import { deleteProject, getProject } from "@/lib/api/projects";
@@ -168,22 +169,38 @@ export default function ProjectDetailPage() {
 
   return (
     <main className="flex flex-1 flex-col items-center px-4 py-8 sm:py-12">
-      <div className="w-full max-w-2xl">
+      <div className="w-full max-w-4xl">
         <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <h1 className="break-words text-2xl font-bold">{project.name}</h1>
             <p className="break-words text-sm text-zinc-500">
               팀원: {project.members.join(", ")}
             </p>
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+              <ProjectStatusBadge status={project.status} />
+              {project.disposalDeadline && (
+                <span className="text-zinc-500">
+                  폐기 예정일 {project.disposalDeadline}
+                </span>
+              )}
+            </div>
           </div>
           <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:shrink-0">
             <Link
-              href={`/projects/${id}/new`}
-              className="flex-1 rounded-lg bg-zinc-900 px-4 py-2 text-center text-sm font-medium text-white transition-colors hover:bg-zinc-800 sm:flex-none dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+              href={`/projects/${id}/dashboard`}
+              className="flex-1 rounded-lg border border-zinc-300 px-4 py-2 text-center text-sm font-medium transition-colors hover:bg-zinc-100 sm:flex-none dark:border-zinc-700 dark:hover:bg-zinc-800"
             >
-              새 회의록
+              진행률
             </Link>
-            {!confirmDelete ? (
+            {project.status !== "DISPOSED" && (
+              <Link
+                href={`/projects/${id}/new`}
+                className="flex-1 rounded-lg bg-zinc-900 px-4 py-2 text-center text-sm font-medium text-white transition-colors hover:bg-zinc-800 sm:flex-none dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+              >
+                새 회의록
+              </Link>
+            )}
+            {project.status !== "DISPOSED" && (!confirmDelete ? (
               <button
                 type="button"
                 onClick={() => {
@@ -192,7 +209,7 @@ export default function ProjectDetailPage() {
                 }}
                 className="rounded-lg border border-red-300 px-3 py-2 text-sm text-red-500 transition-colors hover:bg-red-50 dark:border-red-800 dark:hover:bg-red-950"
               >
-                삭제
+                프로젝트 폐기
               </button>
             ) : (
               <div className="flex flex-1 items-center gap-2 sm:flex-none">
@@ -202,7 +219,7 @@ export default function ProjectDetailPage() {
                   disabled={isDeleting}
                   className="flex-1 rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none"
                 >
-                  {isDeleting ? "삭제 중..." : "확인"}
+                  {isDeleting ? "폐기 중..." : "폐기 확인"}
                 </button>
                 <button
                   type="button"
@@ -216,7 +233,7 @@ export default function ProjectDetailPage() {
                   취소
                 </button>
               </div>
-            )}
+            ))}
           </div>
         </div>
 
@@ -228,6 +245,15 @@ export default function ProjectDetailPage() {
             {deleteError}
           </p>
         )}
+
+        {project.status === "DISPOSED" && (
+          <p className="mb-6 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:bg-amber-950 dark:text-amber-300">
+            폐기된 프로젝트입니다
+            {project.disposedAt ? ` (${project.disposedAt.slice(0, 10)})` : ""}. 기존 회의록과 업무는 확인할 수 있지만 새 회의록은 생성할 수 없습니다.
+          </p>
+        )}
+
+        <ProjectTodoBoard projectId={id} />
 
         {minutesList.length > 0 ? (
           <section>
@@ -263,5 +289,24 @@ export default function ProjectDetailPage() {
         )}
       </div>
     </main>
+  );
+}
+
+function ProjectStatusBadge({ status }: { status: Project["status"] }) {
+  const labels: Record<Project["status"], string> = {
+    ACTIVE: "진행 중",
+    DISPOSAL_SCHEDULED: "폐기 예정",
+    DISPOSED: "폐기됨",
+  };
+  const classes: Record<Project["status"], string> = {
+    ACTIVE: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
+    DISPOSAL_SCHEDULED: "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
+    DISPOSED: "bg-zinc-200 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300",
+  };
+
+  return (
+    <span className={`rounded-full px-2 py-0.5 font-medium ${classes[status]}`}>
+      {labels[status]}
+    </span>
   );
 }

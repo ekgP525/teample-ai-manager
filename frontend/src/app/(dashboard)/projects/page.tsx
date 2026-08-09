@@ -10,6 +10,7 @@ export default function ProjectsPage() {
   const [isCreating, setIsCreating] = useState(false);
   const [name, setName] = useState("");
   const [members, setMembers] = useState("");
+  const [disposalDeadline, setDisposalDeadline] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -70,10 +71,12 @@ export default function ProjectsPage() {
           .split(",")
           .map((member) => member.trim())
           .filter(Boolean),
+        disposalDeadline: disposalDeadline || undefined,
       });
       setProjects((currentProjects) => [created, ...currentProjects]);
       setName("");
       setMembers("");
+      setDisposalDeadline("");
       setIsCreating(false);
     } catch (error) {
       setCreateError(
@@ -124,6 +127,22 @@ export default function ProjectsPage() {
                   disabled={isSubmitting}
                   className="rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:border-zinc-700 dark:bg-zinc-900"
                 />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor="disposal-deadline" className="text-sm font-medium">
+                  프로젝트 폐기 예정일 (선택)
+                </label>
+                <input
+                  id="disposal-deadline"
+                  type="date"
+                  value={disposalDeadline}
+                  onChange={(event) => setDisposalDeadline(event.target.value)}
+                  disabled={isSubmitting}
+                  className="rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:border-zinc-700 dark:bg-zinc-900"
+                />
+                <p className="text-xs text-zinc-500">
+                  날짜가 지나면 프로젝트가 자동으로 폐기 상태로 전환됩니다.
+                </p>
               </div>
               <div className="flex flex-col gap-1.5">
                 <label className="text-sm font-medium">
@@ -194,15 +213,42 @@ export default function ProjectsPage() {
                 href={`/projects/${project.id}`}
                   className="block break-words rounded-lg border border-zinc-200 p-4 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
               >
-                <h2 className="font-semibold">{project.name}</h2>
+                <div className="flex items-start justify-between gap-3">
+                  <h2 className="font-semibold">{project.name}</h2>
+                  <ProjectStatusBadge status={project.status} />
+                </div>
                 <p className="mt-1 text-sm text-zinc-500">
                   {project.members.join(", ")}
                 </p>
+                {project.disposalDeadline && (
+                  <p className="mt-1 text-xs text-zinc-400">
+                    폐기 예정일 {project.disposalDeadline}
+                  </p>
+                )}
               </Link>
             ))}
           </div>
         )}
       </div>
     </main>
+  );
+}
+
+function ProjectStatusBadge({ status }: { status: Project["status"] }) {
+  const labels: Record<Project["status"], string> = {
+    ACTIVE: "진행 중",
+    DISPOSAL_SCHEDULED: "폐기 예정",
+    DISPOSED: "폐기됨",
+  };
+  const classes: Record<Project["status"], string> = {
+    ACTIVE: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
+    DISPOSAL_SCHEDULED: "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
+    DISPOSED: "bg-zinc-200 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300",
+  };
+
+  return (
+    <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${classes[status]}`}>
+      {labels[status]}
+    </span>
   );
 }

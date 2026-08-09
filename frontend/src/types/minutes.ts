@@ -4,6 +4,16 @@ export interface Todo {
   deadline: string;
 }
 
+export interface MinutesEvidence {
+  title: string;
+  topic: string;
+  discussions: string[];
+  decisions: string[];
+  pending: string[];
+  todos: string[];
+  nextAgenda: string[];
+}
+
 export interface Minutes {
   id: string;
   title: string;
@@ -13,6 +23,7 @@ export interface Minutes {
   pending: string[];
   todos: Todo[];
   nextAgenda: string[];
+  evidence: MinutesEvidence | null;
 }
 
 export interface MinutesSummary {
@@ -29,4 +40,23 @@ export interface Project {
   name: string;
   members: string[];
   createdAt: string;
+  disposalDeadline: string | null;
+  status: "ACTIVE" | "DISPOSAL_SCHEDULED" | "DISPOSED";
+  disposedAt: string | null;
+}
+
+export interface ProjectTodo {
+  id: string;
+  content: string;
+  assignee: {
+    id: string;
+    name: string;
+  };
+  meetingNoteId: string | null;
+  status: "TODO" | "COMPLETED";
+  priorityOrder: number;
+  dueDate: string | null;
+  completedAt: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
 }
