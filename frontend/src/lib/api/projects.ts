@@ -4,6 +4,7 @@ import { apiRequest } from "./client";
 export interface CreateProjectInput {
   name: string;
   members: string[];
+  disposalDeadline?: string;
 }
 
 export function getProjects(signal?: AbortSignal) {

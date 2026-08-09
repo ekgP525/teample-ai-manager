@@ -6,7 +6,7 @@ import { useParams } from "next/navigation";
 import { ExportMenu } from "@/components/export-menu";
 import { ApiError } from "@/lib/api/client";
 import { getMinutes } from "@/lib/api/minutes";
-import type { Minutes } from "@/types/minutes";
+import type { Minutes, MinutesEvidence } from "@/types/minutes";
 import { DeleteMinutesButton } from "./delete-button";
 
 export default function MinutesPage() {
@@ -263,7 +263,7 @@ export default function MinutesPage() {
           )}
         </section>
 
-        <section>
+        <section className="mb-6">
           <h2 className="mb-2 text-lg font-semibold">다음 회의에서 확인할 내용</h2>
           {minutes.nextAgenda.length > 0 ? (
             <ul className="space-y-1.5">
@@ -282,11 +282,59 @@ export default function MinutesPage() {
           )}
         </section>
 
+        {minutes.evidence && <EvidenceSection evidence={minutes.evidence} />}
+
         <div className="mt-10 border-t border-zinc-200 pt-6 print:hidden dark:border-zinc-700">
           <DeleteMinutesButton projectId={id} minutesId={minutesId} />
         </div>
       </div>
     </main>
+  );
+}
+
+function EvidenceSection({ evidence }: { evidence: MinutesEvidence }) {
+  const groups = [
+    { label: "회의록 제목", quotes: [evidence.title] },
+    { label: "회의 주제", quotes: [evidence.topic] },
+    { label: "주요 논의", quotes: evidence.discussions },
+    { label: "결정 사항", quotes: evidence.decisions },
+    { label: "미결정 사항", quotes: evidence.pending },
+    { label: "담당 업무", quotes: evidence.todos },
+    { label: "다음 안건", quotes: evidence.nextAgenda },
+  ].filter((group) => group.quotes.some((quote) => quote?.trim()));
+
+  if (groups.length === 0) return null;
+
+  return (
+    <section className="mt-8 print:hidden">
+      <details className="rounded-lg border border-zinc-200 dark:border-zinc-700">
+        <summary className="cursor-pointer px-4 py-3 font-semibold">
+          AI 정리의 원문 근거 확인
+        </summary>
+        <div className="space-y-4 border-t border-zinc-200 p-4 dark:border-zinc-700">
+          <p className="text-xs text-zinc-500">
+            각 항목을 생성할 때 참고한 카카오톡 대화의 짧은 인용문입니다.
+          </p>
+          {groups.map((group) => (
+            <div key={group.label}>
+              <h3 className="mb-1.5 text-sm font-medium">{group.label}</h3>
+              <div className="space-y-1.5">
+                {group.quotes
+                  .filter((quote) => quote?.trim())
+                  .map((quote, index) => (
+                    <blockquote
+                      key={`${group.label}-${index}`}
+                      className="break-words border-l-2 border-blue-400 bg-blue-50 px-3 py-2 text-sm text-zinc-700 dark:bg-blue-950 dark:text-zinc-300"
+                    >
+                      “{quote}”
+                    </blockquote>
+                  ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </details>
+    </section>
   );
 }
 
