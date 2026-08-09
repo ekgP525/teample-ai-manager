@@ -158,31 +158,53 @@ export default function ProjectDashboardPage() {
           <div>
             <Link
               href={`/projects/${id}`}
-              className="text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
+              className="inline-flex items-center gap-1.5 py-1 text-base font-medium text-zinc-500 transition-colors hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-white"
             >
-              ← 프로젝트로 돌아가기
+              <span className="flex h-5 w-5 items-center justify-center">
+                <svg
+                  viewBox="0 0 20 20"
+                  aria-hidden="true"
+                  className="h-3.5 w-3.5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="m11.5 6-4 4 4 4" />
+                </svg>
+              </span>
+              프로젝트 개요
             </Link>
             <h1 className="mt-2 break-words text-2xl font-bold">
               {project.name} 대시보드
             </h1>
           </div>
-          <label className="flex flex-col gap-1 text-sm font-medium">
-            현재 사용자
-            <select
-              value={currentUser}
-              onChange={(event) => {
-                setCurrentUser(event.target.value);
-                setDashboardError("");
-              }}
-              className="min-w-40 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+          <div className="flex flex-col gap-2 sm:items-end">
+            <Link
+              href="/dashboard"
+              className="text-sm text-zinc-500 hover:text-zinc-900 hover:underline dark:hover:text-zinc-100"
             >
-              {project.members.map((member) => (
-                <option key={member} value={member}>
-                  {member}
-                </option>
-              ))}
-            </select>
-          </label>
+              다른 프로젝트 선택
+            </Link>
+            <label className="flex flex-col gap-1 text-sm font-medium">
+              사용자 선택
+              <select
+                value={currentUser}
+                onChange={(event) => {
+                  setCurrentUser(event.target.value);
+                  setDashboardError("");
+                }}
+                className="min-w-40 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+              >
+                {project.members.map((member) => (
+                  <option key={member} value={member}>
+                    {member}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
         </div>
 
         {!currentUser ? (

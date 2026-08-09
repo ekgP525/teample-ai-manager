@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { createProject, getProjects } from "@/lib/api/projects";
+import { getHiddenProjectIds } from "@/lib/project-visibility";
 import type { Project } from "@/types/minutes";
 
 export default function ProjectsPage() {
@@ -15,6 +16,7 @@ export default function ProjectsPage() {
   const [loadError, setLoadError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [createError, setCreateError] = useState("");
+  const [hiddenProjectIds] = useState<string[]>(getHiddenProjectIds);
 
   const loadProjects = useCallback(async () => {
     setIsLoading(true);
@@ -94,18 +96,33 @@ export default function ProjectsPage() {
     .map((member) => member.trim())
     .filter(Boolean);
 
+  const hiddenProjectIdSet = new Set(hiddenProjectIds);
+  const visibleProjects = projects.filter(
+    (project) => !hiddenProjectIdSet.has(project.id)
+  );
+  const currentProjects = visibleProjects.filter(
+    (project) => project.status !== "DISPOSED"
+  );
+  const disposedProjects = visibleProjects.filter(
+    (project) => project.status === "DISPOSED"
+  );
+  const deletedProjects = projects.filter((project) =>
+    hiddenProjectIdSet.has(project.id)
+  );
   return (
     <main className="flex flex-1 flex-col items-center px-4 py-8 sm:py-12">
       <div className="w-full max-w-2xl">
         <div className="mb-8 flex items-center justify-between gap-4">
-          <h1 className="text-2xl font-bold">프로젝트</h1>
+          <h1 className="text-2xl font-bold">
+            {isCreating ? "새 프로젝트" : "프로젝트"}
+          </h1>
           <button
             type="button"
             onClick={() => {
               setIsCreating((current) => !current);
               setCreateError("");
             }}
-            className="shrink-0 rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+            className="shrink-0 cursor-pointer rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
           >
             {isCreating ? "취소" : "새 프로젝트"}
           </button>
@@ -130,7 +147,7 @@ export default function ProjectsPage() {
               </div>
               <div className="flex flex-col gap-1.5">
                 <label htmlFor="disposal-deadline" className="text-sm font-medium">
-                  프로젝트 폐기 예정일 (선택)
+                  프로젝트 종료 예정일 (선택)
                 </label>
                 <input
                   id="disposal-deadline"
@@ -141,7 +158,7 @@ export default function ProjectsPage() {
                   className="rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:border-zinc-700 dark:bg-zinc-900"
                 />
                 <p className="text-xs text-zinc-500">
-                  날짜가 지나면 프로젝트가 자동으로 폐기 상태로 전환됩니다.
+                  날짜가 지나면 프로젝트가 자동으로 종료 상태로 전환됩니다.
                 </p>
               </div>
               <div className="flex flex-col gap-1.5">
@@ -176,7 +193,7 @@ export default function ProjectsPage() {
           </form>
         )}
 
-        {isLoading ? (
+        {!isCreating && (isLoading ? (
           <div
             aria-live="polite"
             className="rounded-lg border border-zinc-200 p-8 text-center dark:border-zinc-700"
@@ -206,39 +223,105 @@ export default function ProjectsPage() {
             </p>
           </div>
         ) : (
-          <div className="space-y-3">
-            {projects.map((project) => (
-              <Link
-                key={project.id}
-                href={`/projects/${project.id}`}
-                  className="block break-words rounded-lg border border-zinc-200 p-4 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <h2 className="font-semibold">{project.name}</h2>
-                  <ProjectStatusBadge status={project.status} />
+          <div className="space-y-8">
+            <section aria-labelledby="current-projects-heading">
+              <h2 id="current-projects-heading" className="mb-3 text-lg font-semibold">
+                진행 중인 프로젝트
+              </h2>
+              {currentProjects.length > 0 ? (
+                <div className="space-y-3">
+                  {currentProjects.map((project) => (
+                    <ProjectCard key={project.id} project={project} />
+                  ))}
                 </div>
-                <p className="mt-1 text-sm text-zinc-500">
-                  {project.members.join(", ")}
+              ) : (
+                <p className="rounded-lg border border-zinc-200 p-6 text-center text-sm text-zinc-500 dark:border-zinc-700">
+                  진행 중인 프로젝트가 없습니다.
                 </p>
-                {project.disposalDeadline && (
-                  <p className="mt-1 text-xs text-zinc-400">
-                    폐기 예정일 {project.disposalDeadline}
-                  </p>
-                )}
-              </Link>
-            ))}
+              )}
+            </section>
+
+            {disposedProjects.length > 0 && (
+              <section aria-labelledby="disposed-projects-heading">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <h2 id="disposed-projects-heading" className="text-lg font-semibold">
+                    종료된 프로젝트
+                  </h2>
+                  <span className="text-sm text-zinc-500">
+                    {disposedProjects.length}개
+                  </span>
+                </div>
+                <div className="space-y-3">
+                  {disposedProjects.map((project) => (
+                    <ProjectCard key={project.id} project={project} />
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {deletedProjects.length > 0 && (
+              <section aria-labelledby="deleted-projects-heading">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <h2 id="deleted-projects-heading" className="text-lg font-semibold">
+                    삭제된 프로젝트
+                  </h2>
+                  <span className="text-sm text-zinc-500">
+                    {deletedProjects.length}개
+                  </span>
+                </div>
+                <div className="space-y-3">
+                  {deletedProjects.map((project) => (
+                    <ProjectCard key={project.id} project={project} isDeleted />
+                  ))}
+                </div>
+              </section>
+            )}
           </div>
-        )}
+        ))}
       </div>
     </main>
   );
 }
 
-function ProjectStatusBadge({ status }: { status: Project["status"] }) {
+function ProjectCard({
+  project,
+  isDeleted = false,
+}: {
+  project: Project;
+  isDeleted?: boolean;
+}) {
+  return (
+    <Link
+      href={`/projects/${project.id}`}
+      className="block break-words rounded-lg border border-zinc-200 p-4 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <h3 className="font-semibold">{project.name}</h3>
+        <ProjectStatusBadge status={project.status} isDeleted={isDeleted} />
+      </div>
+      <p className="mt-1 text-sm text-zinc-500">
+        {project.members.join(", ")}
+      </p>
+      {project.disposalDeadline && (
+        <p className="mt-1 text-xs text-zinc-400">
+          종료 예정일 {project.disposalDeadline}
+        </p>
+      )}
+    </Link>
+  );
+}
+
+function ProjectStatusBadge({
+  status,
+  isDeleted = false,
+}: {
+  status: Project["status"];
+  isDeleted?: boolean;
+}) {
   const labels: Record<Project["status"], string> = {
     ACTIVE: "진행 중",
-    DISPOSAL_SCHEDULED: "폐기 예정",
-    DISPOSED: "폐기됨",
+    DISPOSAL_SCHEDULED: "종료 예정",
+    DISPOSED: "종료됨",
   };
   const classes: Record<Project["status"], string> = {
     ACTIVE: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
@@ -247,8 +330,14 @@ function ProjectStatusBadge({ status }: { status: Project["status"] }) {
   };
 
   return (
-    <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${classes[status]}`}>
-      {labels[status]}
+    <span
+      className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
+        isDeleted
+          ? "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300"
+          : classes[status]
+      }`}
+    >
+      {isDeleted ? "삭제됨" : labels[status]}
     </span>
   );
 }

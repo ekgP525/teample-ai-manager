@@ -7,6 +7,10 @@ import { ProjectTodoBoard } from "@/components/project-todo-board";
 import { ApiError } from "@/lib/api/client";
 import { getProjectMinutes } from "@/lib/api/minutes";
 import { deleteProject, getProject } from "@/lib/api/projects";
+import {
+  getHiddenProjectIds,
+  removeProjectFromList,
+} from "@/lib/project-visibility";
 import type { MinutesSummary, Project } from "@/types/minutes";
 
 async function fetchProjectData(projectId: string, signal?: AbortSignal) {
@@ -30,6 +34,10 @@ export default function ProjectDetailPage() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  const [isDeletedProject] = useState(() =>
+    getHiddenProjectIds().includes(id)
+  );
 
   useEffect(() => {
     const controller = new AbortController();
@@ -104,6 +112,7 @@ export default function ProjectDetailPage() {
 
     try {
       await deleteProject(id);
+      removeProjectFromList(id);
       router.push("/projects");
     } catch (error) {
       setDeleteError(
@@ -113,6 +122,17 @@ export default function ProjectDetailPage() {
       );
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  const handleRemove = () => {
+    setDeleteError("");
+
+    try {
+      removeProjectFromList(id);
+      router.replace("/projects");
+    } catch {
+      setDeleteError("프로젝트를 목록에서 삭제하지 못했습니다.");
     }
   };
 
@@ -177,10 +197,13 @@ export default function ProjectDetailPage() {
               팀원: {project.members.join(", ")}
             </p>
             <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-              <ProjectStatusBadge status={project.status} />
+              <ProjectStatusBadge
+                status={project.status}
+                isDeleted={isDeletedProject}
+              />
               {project.disposalDeadline && (
                 <span className="text-zinc-500">
-                  폐기 예정일 {project.disposalDeadline}
+                  종료 예정일 {project.disposalDeadline}
                 </span>
               )}
             </div>
@@ -209,7 +232,7 @@ export default function ProjectDetailPage() {
                 }}
                 className="rounded-lg border border-red-300 px-3 py-2 text-sm text-red-500 transition-colors hover:bg-red-50 dark:border-red-800 dark:hover:bg-red-950"
               >
-                프로젝트 폐기
+                프로젝트 삭제
               </button>
             ) : (
               <div className="flex flex-1 items-center gap-2 sm:flex-none">
@@ -219,7 +242,7 @@ export default function ProjectDetailPage() {
                   disabled={isDeleting}
                   className="flex-1 rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none"
                 >
-                  {isDeleting ? "폐기 중..." : "폐기 확인"}
+                  {isDeleting ? "삭제 중..." : "삭제 확인"}
                 </button>
                 <button
                   type="button"
@@ -229,6 +252,38 @@ export default function ProjectDetailPage() {
                   }}
                   disabled={isDeleting}
                   className="flex-1 rounded-lg border border-zinc-300 px-3 py-2 text-sm hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none dark:border-zinc-700 dark:hover:bg-zinc-800"
+                >
+                  취소
+                </button>
+              </div>
+            ))}
+            {project.status === "DISPOSED" && !isDeletedProject && (!confirmRemove ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setConfirmRemove(true);
+                  setDeleteError("");
+                }}
+                className="rounded-lg border border-red-300 px-3 py-2 text-sm text-red-500 transition-colors hover:bg-red-50 dark:border-red-800 dark:hover:bg-red-950"
+              >
+                프로젝트 삭제
+              </button>
+            ) : (
+              <div className="flex flex-1 items-center gap-2 sm:flex-none">
+                <button
+                  type="button"
+                  onClick={handleRemove}
+                  className="flex-1 rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 sm:flex-none"
+                >
+                  삭제 확인
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setConfirmRemove(false);
+                    setDeleteError("");
+                  }}
+                  className="flex-1 rounded-lg border border-zinc-300 px-3 py-2 text-sm hover:bg-zinc-100 sm:flex-none dark:border-zinc-700 dark:hover:bg-zinc-800"
                 >
                   취소
                 </button>
@@ -248,7 +303,7 @@ export default function ProjectDetailPage() {
 
         {project.status === "DISPOSED" && (
           <p className="mb-6 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:bg-amber-950 dark:text-amber-300">
-            폐기된 프로젝트입니다
+            {isDeletedProject ? "삭제된" : "종료된"} 프로젝트입니다
             {project.disposedAt ? ` (${project.disposedAt.slice(0, 10)})` : ""}. 기존 회의록과 업무는 확인할 수 있지만 새 회의록은 생성할 수 없습니다.
           </p>
         )}
@@ -292,11 +347,17 @@ export default function ProjectDetailPage() {
   );
 }
 
-function ProjectStatusBadge({ status }: { status: Project["status"] }) {
+function ProjectStatusBadge({
+  status,
+  isDeleted = false,
+}: {
+  status: Project["status"];
+  isDeleted?: boolean;
+}) {
   const labels: Record<Project["status"], string> = {
     ACTIVE: "진행 중",
-    DISPOSAL_SCHEDULED: "폐기 예정",
-    DISPOSED: "폐기됨",
+    DISPOSAL_SCHEDULED: "종료 예정",
+    DISPOSED: "종료됨",
   };
   const classes: Record<Project["status"], string> = {
     ACTIVE: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
@@ -305,8 +366,14 @@ function ProjectStatusBadge({ status }: { status: Project["status"] }) {
   };
 
   return (
-    <span className={`rounded-full px-2 py-0.5 font-medium ${classes[status]}`}>
-      {labels[status]}
+    <span
+      className={`rounded-full px-2 py-0.5 font-medium ${
+        isDeleted
+          ? "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300"
+          : classes[status]
+      }`}
+    >
+      {isDeleted ? "삭제됨" : labels[status]}
     </span>
   );
 }
