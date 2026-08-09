@@ -53,6 +53,7 @@ public class DashboardService {
         }
 
         return projectRepository.findAll().stream()
+                .filter(project -> isProjectMember(project, resolvedUserId))
                 .map(project -> {
                     todoProgressSyncService.syncProject(project);
                     return buildMyProjectDashboard(project, resolvedUserId);
@@ -69,14 +70,21 @@ public class DashboardService {
         }
 
         return projectRepository.findById(projectId).map(project -> {
+            ensureProjectMember(project, resolvedUserId);
             todoProgressSyncService.syncProject(project);
             return buildMyProjectDashboard(project, resolvedUserId);
         });
     }
 
     @Transactional
-    public Optional<TeamProjectDashboardResponse> findTeamProjectDashboard(String projectId) {
+    public Optional<TeamProjectDashboardResponse> findTeamProjectDashboard(String projectId, String currentUserId) {
+        String resolvedUserId = normalizeOptionalUserId(currentUserId);
+        if (resolvedUserId == null) {
+            return Optional.empty();
+        }
+
         return projectRepository.findById(projectId).map(project -> {
+            ensureProjectMember(project, resolvedUserId);
             todoProgressSyncService.syncProject(project);
             return buildTeamProjectDashboard(project);
         });
@@ -92,6 +100,7 @@ public class DashboardService {
         return todoMemberProgressRepository.findById(assignmentId)
                 .map(progress -> {
                     ensureOwnProgress(progress, resolvedUserId);
+                    ensureAssigned(progress);
                     return updateProgress(progress, request);
                 });
     }
@@ -117,14 +126,19 @@ public class DashboardService {
 
     @Transactional
     public Optional<ProjectDashboardResponse> findLegacyProjectDashboard(String projectId, String userId) {
+        String resolvedUserId = normalizeOptionalUserId(userId);
+        if (resolvedUserId == null) {
+            return Optional.empty();
+        }
+
         return projectRepository.findById(projectId).map(project -> {
+            ensureProjectMember(project, resolvedUserId);
             todoProgressSyncService.syncProject(project);
             TeamProjectDashboardResponse teamDashboard = buildTeamProjectDashboard(project);
             List<DashboardMemberResponse> members = teamDashboard.getMembers().stream()
                     .map(this::toLegacyMemberResponse)
                     .toList();
 
-            String resolvedUserId = normalizeOptionalUserId(userId);
             DashboardMemberResponse selectedMember = resolveSelectedMember(members, resolvedUserId);
 
             return ProjectDashboardResponse.builder()
@@ -194,6 +208,29 @@ public class DashboardService {
                 .members(members)
                 .todos(todos)
                 .build();
+    }
+
+    private void ensureProjectMember(Project project, String currentUserId) {
+        if (!isProjectMember(project, currentUserId)) {
+            throw new TodoAccessDeniedException("Only project members can access this dashboard.");
+        }
+    }
+
+    private boolean isProjectMember(Project project, String currentUserId) {
+        String resolvedUserId = normalizeOptionalUserId(currentUserId);
+        if (resolvedUserId == null || project.getMembers() == null) {
+            return false;
+        }
+
+        return project.getMembers().stream()
+                .map(this::normalizeOptionalUserId)
+                .anyMatch(member -> member != null && member.equalsIgnoreCase(resolvedUserId));
+    }
+
+    private void ensureAssigned(TodoMemberProgress progress) {
+        if (!Boolean.TRUE.equals(progress.getAssigned())) {
+            throw new TodoAccessDeniedException("Only assigned todo progress can be updated.");
+        }
     }
 
     private void ensureOwnProgress(TodoMemberProgress progress, String currentUserId) {

@@ -133,7 +133,7 @@ class DashboardServiceTest {
         when(projectTodoRepository.findByProjectId("project-1"))
                 .thenReturn(List.of(sharedTodo));
 
-        TeamProjectDashboardResponse dashboard = dashboardService.findTeamProjectDashboard("project-1")
+        TeamProjectDashboardResponse dashboard = dashboardService.findTeamProjectDashboard("project-1", "alice")
                 .orElseThrow();
 
         assertThat(dashboard.getTodos()).hasSize(1);
@@ -177,6 +177,16 @@ class DashboardServiceTest {
         assertThat(bobDashboard.getProgressRate()).isZero();
     }
 
+
+    @Test
+    void nonProjectMemberCannotReadProjectDashboard() {
+        when(projectRepository.findById("project-1")).thenReturn(Optional.of(project));
+
+        assertThatThrownBy(() -> dashboardService.findMyProjectDashboard("project-1", "mallory"))
+                .isInstanceOf(TodoAccessDeniedException.class);
+        assertThatThrownBy(() -> dashboardService.findTeamProjectDashboard("project-1", "mallory"))
+                .isInstanceOf(TodoAccessDeniedException.class);
+    }
     private TodoMemberProgress progress(String id, String userId, boolean completed, ProjectTodo todo) {
         TodoMemberProgress progress = TodoMemberProgress.builder()
                 .id(id)

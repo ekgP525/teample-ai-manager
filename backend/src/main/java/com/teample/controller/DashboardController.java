@@ -12,6 +12,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -20,6 +21,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 @RestController
@@ -28,6 +31,7 @@ import java.util.List;
 public class DashboardController {
 
     private static final String CURRENT_USER_ID_ATTRIBUTE = "currentUserId";
+    private static final String CURRENT_USER_ID_HEADER = "X-Current-User-Id";
 
     private final DashboardService dashboardService;
 
@@ -68,7 +72,7 @@ public class DashboardController {
             @PathVariable String projectId,
             HttpServletRequest request) {
         currentUserId(request);
-        return dashboardService.findTeamProjectDashboard(projectId)
+        return dashboardService.findTeamProjectDashboard(projectId, currentUserId(request))
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
@@ -105,16 +109,17 @@ public class DashboardController {
         }
     }
 
+    @ExceptionHandler(TodoAccessDeniedException.class)
+    public ResponseEntity<Void> handleTodoAccessDenied() {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+    }
+
     private String currentUserId(HttpServletRequest request) {
         Object value = request.getAttribute(CURRENT_USER_ID_ATTRIBUTE);
-        if (value == null) {
+        String currentUserId = value != null ? value.toString() : request.getHeader(CURRENT_USER_ID_HEADER);
+        if (currentUserId == null || currentUserId.isBlank()) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Current user is not resolved.");
         }
-
-        String currentUserId = value.toString().trim();
-        if (currentUserId.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Current user is empty.");
-        }
-        return currentUserId;
+        return URLDecoder.decode(currentUserId.trim(), StandardCharsets.UTF_8);
     }
 }
