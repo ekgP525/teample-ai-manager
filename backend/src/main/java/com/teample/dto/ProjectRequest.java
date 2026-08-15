@@ -1,5 +1,6 @@
 package com.teample.dto;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import lombok.Data;
@@ -16,5 +17,6 @@ public class ProjectRequest {
     @NotEmpty
     private List<String> members;
 
-    private LocalDate disposalDeadline;
+    @JsonAlias("disposalDeadline")
+    private LocalDate endDate;
 }

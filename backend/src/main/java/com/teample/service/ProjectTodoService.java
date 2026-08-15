@@ -3,9 +3,11 @@ package com.teample.service;
 import com.teample.dto.ProjectTodoResponse;
 import com.teample.dto.TodoAssigneeResponse;
 import com.teample.entity.*;
+import com.teample.repository.IntegratedTodoRepository;
 import com.teample.repository.MinutesRepository;
 import com.teample.repository.ProjectRepository;
-import com.teample.repository.IntegratedTodoRepository;
+import com.teample.repository.ProjectTodoRepository;
+import com.teample.repository.TodoMemberProgressRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -27,6 +29,8 @@ public class ProjectTodoService {
     private final IntegratedTodoRepository todoRepository;
     private final ProjectRepository projectRepository;
     private final MinutesRepository minutesRepository;
+    private final ProjectTodoRepository projectTodoRepository;
+    private final TodoMemberProgressRepository todoMemberProgressRepository;
 
     @Transactional
     public List<ProjectTodoResponse> findByProject(String projectId, TodoStatus status) {
@@ -70,7 +74,7 @@ public class ProjectTodoService {
             }
 
             String assigneeName = source.getName() != null && !source.getName().isBlank()
-                    ? source.getName().trim() : "미지정";
+                    ? source.getName().trim() : "UNASSIGNED";
             IntegratedTodo todo = existingByIndex.get(index);
             if (todo == null) {
                 todo = IntegratedTodo.builder()
@@ -99,6 +103,7 @@ public class ProjectTodoService {
         IntegratedTodo todo = findOwnedTodo(projectId, todoId);
         todo.setStatus(status);
         todo.setCompletedAt(status == TodoStatus.COMPLETED ? LocalDateTime.now() : null);
+        syncDashboardProgress(todo, status == TodoStatus.COMPLETED);
         return toResponse(todo);
     }
 
@@ -131,6 +136,19 @@ public class ProjectTodoService {
     private IntegratedTodo findOwnedTodo(String projectId, String todoId) {
         return todoRepository.findByIdAndProjectId(todoId, projectId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Todo not found"));
+    }
+
+    private void syncDashboardProgress(IntegratedTodo todo, boolean completed) {
+        if (todo.getProject() == null || todo.getMinutes() == null || todo.getSourceIndex() == null) {
+            return;
+        }
+        projectTodoRepository.findByProjectIdAndMinutesIdAndSourceIndex(
+                        todo.getProject().getId(), todo.getMinutes().getId(), todo.getSourceIndex())
+                .ifPresent(projectTodo -> todoMemberProgressRepository.findByTodoIdAndAssignedTrue(projectTodo.getId())
+                        .forEach(progress -> {
+                            progress.setCompletedState(completed);
+                            todoMemberProgressRepository.save(progress);
+                        }));
     }
 
     private String stableAssigneeId(String projectId, String assigneeName) {

@@ -7,4 +7,5 @@ import java.util.List;
 
 public interface MinutesRepository extends JpaRepository<Minutes, String> {
     List<Minutes> findByProjectIdOrderByCreatedAtDesc(String projectId);
+    void deleteByProjectId(String projectId);
 }

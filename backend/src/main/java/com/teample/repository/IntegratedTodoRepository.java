@@ -17,6 +17,11 @@ public interface IntegratedTodoRepository extends JpaRepository<IntegratedTodo, 
 
     Optional<IntegratedTodo> findByIdAndProjectId(String id, String projectId);
 
+    Optional<IntegratedTodo> findByProjectIdAndMinutesIdAndSourceIndex(
+            String projectId, String minutesId, Integer sourceIndex);
+
+    void deleteByProjectId(String projectId);
+
     @Query("select coalesce(max(t.priorityOrder), 0) from IntegratedTodo t where t.project.id = :projectId")
     int findMaxPriorityOrderByProjectId(@Param("projectId") String projectId);
 }

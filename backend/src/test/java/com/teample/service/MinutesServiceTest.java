@@ -38,11 +38,11 @@ class MinutesServiceTest {
     }
 
     @Test
-    void disposedProjectCannotCreateNewMinutes() {
+    void endedProjectCannotCreateNewMinutes() {
         MinutesRepository minutesRepository = mock(MinutesRepository.class);
         ProjectRepository projectRepository = mock(ProjectRepository.class);
         ClaudeService claudeService = mock(ClaudeService.class);
-        Project project = Project.builder().status(ProjectStatus.DISPOSED).build();
+        Project project = Project.builder().status(ProjectStatus.ENDED).build();
         when(projectRepository.findById("project-id")).thenReturn(Optional.of(project));
         MinutesService service = new MinutesService(
                 minutesRepository, projectRepository, claudeService,

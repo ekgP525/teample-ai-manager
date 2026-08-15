@@ -10,9 +10,13 @@ import com.teample.dto.dashboard.TeamProjectDashboardResponse;
 import com.teample.dto.dashboard.TeamTodoProgressResponse;
 import com.teample.dto.dashboard.TodoAssignmentResponse;
 import com.teample.dto.dashboard.TodoProgressUpdateRequest;
+import com.teample.entity.IntegratedTodo;
 import com.teample.entity.Project;
+import com.teample.entity.ProjectStatus;
 import com.teample.entity.ProjectTodo;
 import com.teample.entity.TodoMemberProgress;
+import com.teample.entity.TodoStatus;
+import com.teample.repository.IntegratedTodoRepository;
 import com.teample.repository.ProjectRepository;
 import com.teample.repository.ProjectTodoRepository;
 import com.teample.repository.TodoMemberProgressRepository;
@@ -22,6 +26,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -41,6 +46,7 @@ public class DashboardService {
     private static final String UNASSIGNED = "UNASSIGNED";
 
     private final ProjectRepository projectRepository;
+    private final IntegratedTodoRepository integratedTodoRepository;
     private final ProjectTodoRepository projectTodoRepository;
     private final TodoMemberProgressRepository todoMemberProgressRepository;
     private final TodoProgressSyncService todoProgressSyncService;
@@ -53,6 +59,7 @@ public class DashboardService {
         }
 
         return projectRepository.findAll().stream()
+                .filter(Project::isVisibleInActiveList)
                 .filter(project -> isProjectMember(project, resolvedUserId))
                 .map(project -> {
                     todoProgressSyncService.syncProject(project);
@@ -112,7 +119,7 @@ public class DashboardService {
             return Optional.empty();
         }
 
-        return todoMemberProgressRepository.findByTodoIdAndUserId(todoId, resolvedUserId)
+        return findProgressByClientTodoId(todoId, resolvedUserId)
                 .filter(progress -> Boolean.TRUE.equals(progress.getAssigned()))
                 .map(progress -> updateProgress(progress, request));
     }
@@ -244,7 +251,40 @@ public class DashboardService {
         if (completed != null) {
             progress.setCompletedState(completed);
         }
-        return toAssignmentResponse(todoMemberProgressRepository.save(progress));
+        TodoMemberProgress saved = todoMemberProgressRepository.save(progress);
+        syncIntegratedTodoStatus(saved.getTodo());
+        return toAssignmentResponse(saved);
+    }
+
+    private Optional<TodoMemberProgress> findProgressByClientTodoId(String todoId, String userId) {
+        Optional<TodoMemberProgress> legacyProgress = todoMemberProgressRepository.findByTodoIdAndUserId(todoId, userId);
+        if (legacyProgress.isPresent()) {
+            return legacyProgress;
+        }
+
+        return integratedTodoRepository.findById(todoId)
+                .flatMap(this::findDashboardTodo)
+                .flatMap(todo -> todoMemberProgressRepository.findByTodoIdAndUserId(todo.getId(), userId));
+    }
+
+    private Optional<ProjectTodo> findDashboardTodo(IntegratedTodo todo) {
+        if (todo.getProject() == null || todo.getMinutes() == null || todo.getSourceIndex() == null) {
+            return Optional.empty();
+        }
+        return projectTodoRepository.findByProjectIdAndMinutesIdAndSourceIndex(
+                todo.getProject().getId(), todo.getMinutes().getId(), todo.getSourceIndex());
+    }
+
+    private void syncIntegratedTodoStatus(ProjectTodo dashboardTodo) {
+        findIntegratedTodo(dashboardTodo).ifPresent(integratedTodo -> {
+            List<TodoMemberProgress> progressRows = todoMemberProgressRepository
+                    .findByTodoIdAndAssignedTrue(dashboardTodo.getId());
+            boolean completed = !progressRows.isEmpty()
+                    && progressRows.stream().allMatch(progressRow -> Boolean.TRUE.equals(progressRow.getCompleted()));
+            integratedTodo.setStatus(completed ? TodoStatus.COMPLETED : TodoStatus.TODO);
+            integratedTodo.setCompletedAt(completed ? LocalDateTime.now() : null);
+            integratedTodoRepository.save(integratedTodo);
+        });
     }
 
     private Boolean resolveCompleted(TodoProgressUpdateRequest request) {
@@ -292,7 +332,7 @@ public class DashboardService {
                 .toList();
 
         return TeamTodoProgressResponse.builder()
-                .todoId(todo.getId())
+                .todoId(resolveClientTodoId(todo))
                 .projectId(todo.getProject().getId())
                 .projectName(todo.getProject().getName())
                 .minutesId(todo.getMinutes().getId())
@@ -310,7 +350,7 @@ public class DashboardService {
 
         return TodoAssignmentResponse.builder()
                 .assignmentId(progress.getId())
-                .todoId(todo.getId())
+                .todoId(resolveClientTodoId(todo))
                 .projectId(project.getId())
                 .projectName(project.getName())
                 .minutesId(todo.getMinutes().getId())
@@ -467,6 +507,20 @@ public class DashboardService {
             return 100;
         }
         return (int) Math.round(((double) completedCount / totalCount) * 100);
+    }
+
+    private String resolveClientTodoId(ProjectTodo todo) {
+        return findIntegratedTodo(todo)
+                .map(IntegratedTodo::getId)
+                .orElse(todo.getId());
+    }
+
+    private Optional<IntegratedTodo> findIntegratedTodo(ProjectTodo todo) {
+        if (todo == null || todo.getProject() == null || todo.getMinutes() == null || todo.getSourceIndex() == null) {
+            return Optional.empty();
+        }
+        return integratedTodoRepository.findByProjectIdAndMinutesIdAndSourceIndex(
+                todo.getProject().getId(), todo.getMinutes().getId(), todo.getSourceIndex());
     }
 
     private String resolveDeadlineStatus(String deadline) {

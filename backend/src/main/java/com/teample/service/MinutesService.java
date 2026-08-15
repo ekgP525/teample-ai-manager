@@ -37,10 +37,8 @@ public class MinutesService {
         Project project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new RuntimeException("Project not found."));
 
-        if (project.getStatus() == ProjectStatus.DISPOSED
-                || (project.getDisposalDeadline() != null
-                && project.getDisposalDeadline().isBefore(LocalDate.now()))) {
-            throw new IllegalStateException("Disposed projects cannot create minutes.");
+        if (project.blocksNewMinutes(LocalDate.now())) {
+            throw new IllegalStateException("Ended or deleted projects cannot create minutes.");
         }
 
         ClaudeService.MinutesResult result = claudeService.analyze(
