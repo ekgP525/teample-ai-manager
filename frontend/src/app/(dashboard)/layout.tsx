@@ -1,3 +1,5 @@
+import { AuthSessionGuard } from "@/components/auth-session-guard";
+import { SignOutButton } from "@/components/sign-out-button";
 import Link from "next/link";
 
 export default function DashboardLayout({
@@ -5,9 +7,8 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  // TODO: 로그인 여부 체크 → 미로그인 시 /login 리다이렉트
   return (
-    <>
+    <AuthSessionGuard>
       <header className="border-b border-zinc-200 print:hidden dark:border-zinc-800">
         <nav className="mx-auto flex max-w-4xl items-center justify-between gap-4 py-3 pl-4 pr-16">
           <Link href="/projects" className="text-lg font-bold">
@@ -26,10 +27,11 @@ export default function DashboardLayout({
             >
               프로젝트
             </Link>
+            <SignOutButton />
           </div>
         </nav>
       </header>
       {children}
-    </>
+    </AuthSessionGuard>
   );
 }
