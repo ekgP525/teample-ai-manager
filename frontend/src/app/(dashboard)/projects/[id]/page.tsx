@@ -363,7 +363,11 @@ export default function ProjectDetailPage() {
           </p>
         )}
 
-        <ProjectTodoBoard projectId={id} readOnly={isDeletedProject} />
+        <ProjectTodoBoard
+          projectId={id}
+          minutes={minutesList}
+          readOnly={isDeletedProject}
+        />
 
         {minutesList.length > 0 ? (
           <section>

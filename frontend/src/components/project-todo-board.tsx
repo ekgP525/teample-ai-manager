@@ -14,7 +14,26 @@ import {
   updateProjectTodoStatus,
   type ProjectTodoStatus,
 } from "@/lib/api/todos";
-import type { ProjectTodo } from "@/types/minutes";
+import type { MinutesSummary, ProjectTodo } from "@/types/minutes";
+
+type TodoViewMode = "all" | "meeting";
+
+type TodoDisplayItem =
+  | {
+      kind: "heading";
+      key: string;
+      minutesId: string | null;
+      title: string;
+      meetingDate: string | null;
+      count: number;
+    }
+  | {
+      kind: "todo";
+      key: string;
+      todo: ProjectTodo;
+      index: number;
+      position: number;
+    };
 
 interface TodoTransitionToast {
   todo: ProjectTodo;
@@ -30,12 +49,15 @@ interface TodoDropTarget {
 
 export function ProjectTodoBoard({
   projectId,
+  minutes,
   readOnly = false,
 }: {
   projectId: string;
+  minutes: MinutesSummary[];
   readOnly?: boolean;
 }) {
   const [status, setStatus] = useState<ProjectTodoStatus>("TODO");
+  const [viewMode, setViewMode] = useState<TodoViewMode>("meeting");
   const [todos, setTodos] = useState<ProjectTodo[]>([]);
   const [loadedKey, setLoadedKey] = useState("");
   const [error, setError] = useState("");
@@ -51,6 +73,8 @@ export function ProjectTodoBoard({
   const [isUndoing, setIsUndoing] = useState(false);
   const exitTimerRef = useRef<number | null>(null);
   const currentKey = `${projectId}/${status}`;
+  const displayItems = buildTodoDisplayItems(todos, minutes, viewMode);
+  const canReorderTodos = canReorder(todos, viewMode);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -249,6 +273,14 @@ export function ProjectTodoBoard({
         return current;
       }
 
+      if (
+        viewMode === "meeting" &&
+        getMeetingKey(current[sourceIndex]) !==
+          getMeetingKey(current[targetIndex])
+      ) {
+        return current;
+      }
+
       const reordered = [...current];
       const [movedTodo] = reordered.splice(sourceIndex, 1);
       reordered.splice(targetIndex, 0, movedTodo);
@@ -258,6 +290,13 @@ export function ProjectTodoBoard({
 
   const startOrderEditing = () => {
     setOrderSnapshot(todos);
+    if (viewMode === "meeting") {
+      setTodos(
+        buildTodoDisplayItems(todos, minutes, viewMode).flatMap((item) =>
+          item.kind === "todo" ? [item.todo] : []
+        )
+      );
+    }
     setIsEditingOrder(true);
     setError("");
   };
@@ -311,6 +350,19 @@ export function ProjectTodoBoard({
   const handleDragOver = (event: DragEvent<HTMLElement>, targetTodoId: string) => {
     if (!draggedTodoId || draggedTodoId === targetTodoId) return;
 
+    if (viewMode === "meeting") {
+      const draggedTodo = todos.find((todo) => todo.id === draggedTodoId);
+      const targetTodo = todos.find((todo) => todo.id === targetTodoId);
+      if (
+        !draggedTodo ||
+        !targetTodo ||
+        getMeetingKey(draggedTodo) !== getMeetingKey(targetTodo)
+      ) {
+        setDropTarget(null);
+        return;
+      }
+    }
+
     event.preventDefault();
     event.dataTransfer.dropEffect = "move";
     const bounds = event.currentTarget.getBoundingClientRect();
@@ -341,6 +393,13 @@ export function ProjectTodoBoard({
       );
       const targetIndex = current.findIndex((todo) => todo.id === targetTodoId);
       if (sourceIndex < 0 || targetIndex < 0) return current;
+      if (
+        viewMode === "meeting" &&
+        getMeetingKey(current[sourceIndex]) !==
+          getMeetingKey(current[targetIndex])
+      ) {
+        return current;
+      }
 
       let insertionIndex = position === "before" ? targetIndex : targetIndex + 1;
       const reordered = [...current];
@@ -365,10 +424,30 @@ export function ProjectTodoBoard({
   ) => {
     let targetIndex: number | null = null;
 
-    if (event.key === "ArrowUp") targetIndex = index - 1;
-    if (event.key === "ArrowDown") targetIndex = index + 1;
-    if (event.key === "Home") targetIndex = 0;
-    if (event.key === "End") targetIndex = todos.length - 1;
+    if (viewMode === "meeting") {
+      const meetingKey = getMeetingKey(todos[index]);
+      const meetingIndexes = todos
+        .map((todo, todoIndex) => ({ todo, todoIndex }))
+        .filter(({ todo }) => getMeetingKey(todo) === meetingKey)
+        .map(({ todoIndex }) => todoIndex);
+      const meetingPosition = meetingIndexes.indexOf(index);
+
+      if (event.key === "ArrowUp") {
+        targetIndex = meetingIndexes[meetingPosition - 1] ?? null;
+      }
+      if (event.key === "ArrowDown") {
+        targetIndex = meetingIndexes[meetingPosition + 1] ?? null;
+      }
+      if (event.key === "Home") targetIndex = meetingIndexes[0] ?? null;
+      if (event.key === "End") {
+        targetIndex = meetingIndexes[meetingIndexes.length - 1] ?? null;
+      }
+    } else {
+      if (event.key === "ArrowUp") targetIndex = index - 1;
+      if (event.key === "ArrowDown") targetIndex = index + 1;
+      if (event.key === "Home") targetIndex = 0;
+      if (event.key === "End") targetIndex = todos.length - 1;
+    }
     if (targetIndex === null) return;
 
     event.preventDefault();
@@ -377,7 +456,7 @@ export function ProjectTodoBoard({
 
   return (
     <section className="mb-10">
-      <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div className="mb-4">
         <div>
           <h2 className="text-lg font-semibold">프로젝트 업무</h2>
           <p className="mt-0.5 text-xs text-zinc-500">
@@ -386,68 +465,90 @@ export function ProjectTodoBoard({
               : "회의록에서 추출된 업무를 완료 처리하거나 우선순위대로 정렬할 수 있습니다."}
           </p>
         </div>
-        <div className="flex flex-col gap-2 sm:items-end">
-          <div className="grid grid-cols-2 rounded-lg bg-zinc-100 p-1 text-sm dark:bg-zinc-900">
-            {(["TODO", "COMPLETED"] as const).map((itemStatus) => (
-              <button
-                key={itemStatus}
-                type="button"
-                onClick={() => {
-                  setStatus(itemStatus);
-                  setError("");
-                  setToast(null);
-                  setIsToastLeaving(false);
-                }}
-                disabled={Boolean(
-                  isEditingOrder || pendingTodoId || exitingTodoId
-                )}
-                className={`rounded-md px-3 py-1.5 transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-                  status === itemStatus
-                    ? "bg-white font-medium shadow-sm dark:bg-zinc-700"
-                    : "text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
-                }`}
-              >
-                {itemStatus === "TODO" ? "진행 중" : "완료"}
-              </button>
-            ))}
-          </div>
+      </div>
+
+      <div className="mb-4 flex flex-col gap-2 border-b border-zinc-200 sm:flex-row sm:items-end sm:justify-between dark:border-zinc-800">
+        <div className="-mb-px flex items-center">
+          {(["TODO", "COMPLETED"] as const).map((itemStatus) => (
+            <button
+              key={itemStatus}
+              type="button"
+              onClick={() => {
+                setStatus(itemStatus);
+                setError("");
+                setToast(null);
+                setIsToastLeaving(false);
+              }}
+              disabled={Boolean(
+                isEditingOrder || pendingTodoId || exitingTodoId
+              )}
+              className={`border-b-2 px-3 py-2.5 text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                status === itemStatus
+                  ? "border-zinc-950 font-semibold text-zinc-950 dark:border-zinc-50 dark:text-zinc-50"
+                  : "border-transparent text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
+              }`}
+            >
+              {itemStatus === "TODO" ? "진행 중" : "완료"}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-2 pb-2 sm:justify-end">
+          <label className="flex items-center gap-2 text-xs text-zinc-500">
+            <span className="hidden sm:inline">보기 방식</span>
+            <select
+              value={viewMode}
+              onChange={(event) =>
+                setViewMode(event.target.value as TodoViewMode)
+              }
+              disabled={Boolean(
+                isEditingOrder || pendingTodoId || exitingTodoId
+              )}
+              aria-label="업무 보기 방식"
+              className="min-w-32 rounded-md border border-zinc-300 bg-white py-1.5 pl-2.5 text-sm font-medium text-zinc-700 transition-colors disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
+            >
+              <option value="meeting">회의별 보기</option>
+              <option value="all">전체 보기</option>
+            </select>
+          </label>
 
           {!readOnly &&
-            status === "TODO" &&
-            loadedKey === currentKey &&
-            todos.length > 1 && (
-            isEditingOrder ? (
-              <div className="flex items-center gap-2">
-                <span className="mr-1 hidden text-xs text-zinc-500 sm:inline">
-                  핸들을 끌어 순서를 변경하세요
-                </span>
-                <button
-                  type="button"
-                  onClick={cancelOrderEditing}
-                  disabled={isReordering}
-                  className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
-                >
-                  취소
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void saveOrder()}
-                  disabled={isReordering}
-                  className="rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-zinc-800 disabled:cursor-wait disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-                >
-                  {isReordering ? "저장 중..." : "순서 저장"}
-                </button>
-              </div>
-            ) : (
+          status === "TODO" &&
+          loadedKey === currentKey &&
+          canReorderTodos &&
+          (isEditingOrder ? (
+            <div className="flex items-center gap-2">
+              <span className="mr-1 hidden text-xs text-zinc-500 lg:inline">
+                {viewMode === "meeting"
+                  ? "같은 회의 안에서 순서를 변경하세요"
+                  : "핸들을 끌어 순서를 변경하세요"}
+              </span>
               <button
                 type="button"
-                onClick={startOrderEditing}
-                className="text-sm font-medium text-zinc-500 transition-colors hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-white"
+                onClick={cancelOrderEditing}
+                disabled={isReordering}
+                className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
               >
-                순서 편집
+                취소
               </button>
-            )
-          )}
+              <button
+                type="button"
+                onClick={() => void saveOrder()}
+                disabled={isReordering}
+                className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-zinc-800 disabled:cursor-wait disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+              >
+                {isReordering ? "저장 중..." : "순서 저장"}
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={startOrderEditing}
+              className="px-1 py-1.5 text-sm font-medium text-zinc-500 transition-colors hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-white"
+            >
+              순서 편집
+            </button>
+          ))}
         </div>
       </div>
 
@@ -477,7 +578,40 @@ export function ProjectTodoBoard({
         </div>
       ) : (
         <div aria-busy={isReordering || Boolean(pendingTodoId)}>
-          {todos.map((todo, index) => (
+          {displayItems.map((item) => {
+            if (item.kind === "heading") {
+              return (
+                <div
+                  key={item.key}
+                  className="mb-3 mt-6 flex flex-col gap-1 border-b border-zinc-200 pb-2 first:mt-0 sm:flex-row sm:items-end sm:justify-between dark:border-zinc-800"
+                >
+                  <div className="min-w-0">
+                    {item.minutesId ? (
+                      <Link
+                        href={`/projects/${projectId}/minutes/${item.minutesId}`}
+                        className="break-words font-semibold transition-colors hover:text-zinc-600 dark:hover:text-zinc-300"
+                      >
+                        {item.title}
+                      </Link>
+                    ) : (
+                      <h3 className="break-words font-semibold">{item.title}</h3>
+                    )}
+                    {item.meetingDate && (
+                      <p className="mt-0.5 text-xs text-zinc-500">
+                        {item.meetingDate}
+                      </p>
+                    )}
+                  </div>
+                  <span className="shrink-0 text-xs text-zinc-500">
+                    업무 {item.count}개
+                  </span>
+                </div>
+              );
+            }
+
+            const { todo, index, position } = item;
+
+            return (
             <div
               key={todo.id}
               onDragOver={(event) => handleDragOver(event, todo.id)}
@@ -579,15 +713,16 @@ export function ProjectTodoBoard({
                   {isEditingOrder && (
                     <span
                       className="flex h-6 min-w-6 shrink-0 items-center justify-center rounded-md bg-zinc-200/70 px-1.5 text-xs font-semibold tabular-nums text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
-                      aria-label={`우선순위 ${index + 1}`}
+                      aria-label={`우선순위 ${position + 1}`}
                     >
-                      {index + 1}
+                      {position + 1}
                     </span>
                   )}
                 </div>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -616,6 +751,83 @@ export function ProjectTodoBoard({
       )}
     </section>
   );
+}
+
+function buildTodoDisplayItems(
+  todos: ProjectTodo[],
+  minutes: MinutesSummary[],
+  viewMode: TodoViewMode
+): TodoDisplayItem[] {
+  if (viewMode === "all") {
+    return todos.map((todo, index) => ({
+      kind: "todo",
+      key: todo.id,
+      todo,
+      index,
+      position: index,
+    }));
+  }
+
+  const minutesById = new Map(minutes.map((item) => [item.id, item]));
+  const groupedTodos = new Map<string, ProjectTodo[]>();
+
+  for (const todo of todos) {
+    const groupKey = todo.meetingNoteId || "unknown";
+    const group = groupedTodos.get(groupKey) || [];
+    group.push(todo);
+    groupedTodos.set(groupKey, group);
+  }
+
+  const knownMeetingKeys = minutes
+    .map((meeting) => meeting.id)
+    .filter((meetingId) => groupedTodos.has(meetingId));
+  const remainingKeys = Array.from(groupedTodos.keys()).filter(
+    (groupKey) => !knownMeetingKeys.includes(groupKey)
+  );
+
+  return [...knownMeetingKeys, ...remainingKeys].flatMap((groupKey) => {
+    const group = groupedTodos.get(groupKey) || [];
+    const meeting = groupKey === "unknown" ? null : minutesById.get(groupKey);
+    const heading: TodoDisplayItem = {
+      kind: "heading",
+      key: `heading-${groupKey}`,
+      minutesId: groupKey === "unknown" ? null : groupKey,
+      title: meeting?.title || "회의록 정보 없음",
+      meetingDate: meeting?.meetingDate || null,
+      count: group.length,
+    };
+
+    return [
+      heading,
+      ...group.map(
+        (todo, position): TodoDisplayItem => ({
+          kind: "todo",
+          key: todo.id,
+          todo,
+          index: todos.findIndex((item) => item.id === todo.id),
+          position,
+        })
+      ),
+    ];
+  });
+}
+
+function getMeetingKey(todo: ProjectTodo | undefined) {
+  return todo?.meetingNoteId || "unknown";
+}
+
+function canReorder(todos: ProjectTodo[], viewMode: TodoViewMode) {
+  if (viewMode === "all") return todos.length > 1;
+
+  const counts = new Map<string, number>();
+  for (const todo of todos) {
+    const meetingKey = getMeetingKey(todo);
+    const count = (counts.get(meetingKey) || 0) + 1;
+    if (count > 1) return true;
+    counts.set(meetingKey, count);
+  }
+
+  return false;
 }
 
 function OrderHandle({

@@ -171,7 +171,6 @@ export default function ProjectDashboardPage() {
   }
 
   const dashboardIsLoading = Boolean(currentUser) && loadedDashboardKey !== dashboardKey;
-  const overallProgress = getOverallProgress(teamDashboard);
 
   return (
     <main className="flex flex-1 flex-col items-center px-4 py-8 sm:py-12">
@@ -240,12 +239,12 @@ export default function ProjectDashboardPage() {
                   </p>
                 </div>
                 <strong className="shrink-0 text-3xl tabular-nums">
-                  {overallProgress.rate}%
+                  {teamDashboard.progressRate}%
                 </strong>
               </div>
-              <ProgressBar value={overallProgress.rate} />
+              <ProgressBar value={teamDashboard.progressRate} />
               <p className="mt-2 text-right text-sm text-zinc-500">
-                {overallProgress.completed}/{overallProgress.total} 완료
+                {teamDashboard.completedTodoCount}/{teamDashboard.totalTodoCount} 완료
               </p>
             </section>
 
@@ -350,27 +349,6 @@ export default function ProjectDashboardPage() {
       </div>
     </main>
   );
-}
-
-function getOverallProgress(teamDashboard: TeamProjectDashboard | null) {
-  if (!teamDashboard) {
-    return { total: 0, completed: 0, rate: 0 };
-  }
-
-  const total = teamDashboard.members.reduce(
-    (sum, member) => sum + member.totalTodoCount,
-    0
-  );
-  const completed = teamDashboard.members.reduce(
-    (sum, member) => sum + member.completedTodoCount,
-    0
-  );
-
-  return {
-    total,
-    completed,
-    rate: total === 0 ? 0 : Math.round((completed * 100) / total),
-  };
 }
 
 function EmptyState({ message }: { message: string }) {
