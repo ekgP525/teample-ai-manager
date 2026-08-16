@@ -96,6 +96,7 @@ public class Project {
 
     public void restore(LocalDate today, LocalDateTime now) {
         deletedAt = null;
+        status = ProjectStatus.ACTIVE;
         synchronizeLifecycle(today, now);
     }
 }
