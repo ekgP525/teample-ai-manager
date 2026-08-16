@@ -567,3 +567,42 @@ X-Current-User-Id: encoded-user-id
 ```text
 GET, POST, PUT, PATCH, DELETE, OPTIONS
 ```
+## 10. 추가 명세: 업무 ID 기준과 프로젝트 생명주기 정책
+
+이 섹션은 프로젝트 생명주기 정리 작업에서 추가된 백엔드 구현 기준입니다. 기존 명세와 호환되는 필드는 유지합니다.
+
+### 10.1 업무 ID 기준
+
+| 화면/기능 | 클라이언트에 노출되는 `todoId` | 내부 저장소 |
+| --- | --- | --- |
+| 프로젝트 체크리스트 | `integrated_todos.id` | `integrated_todos` |
+| 내 대시보드 | `integrated_todos.id`로 변환해서 응답 | `project_todos`, `todo_member_progress` |
+| 팀 대시보드 | `integrated_todos.id`로 변환해서 응답 | `project_todos`, `todo_member_progress` |
+| `PATCH /api/todos/{todoId}/progress` | `integrated_todos.id` 또는 기존 `project_todos.id` 둘 다 처리 | 내부에서 source 기준 매핑 |
+
+프로젝트 체크리스트와 대시보드는 아직 내부 저장소가 분리되어 있지만, 클라이언트 응답의 `todoId`는 체크리스트 기준 ID로 맞춥니다.
+체크리스트 완료/복원은 대시보드 개인 진행률에 반영되고, 대시보드 진행률 변경은 체크리스트 상태에 반영됩니다.
+
+### 10.2 프로젝트 생명주기 정책
+
+| 동작 | 정책 |
+| --- | --- |
+| 일반 목록 조회 | `DELETED` 프로젝트 제외 |
+| 휴지통 이동 | `DELETE /api/projects/{projectId}` 호출 시 백엔드 내부 상태 `DELETED`, `deletedAt` 기록 |
+| 복원 | `deletedAt` 제거 후 `endDate` 기준으로 상태 재계산 |
+| 자동 종료 | 스케줄러가 기본 1시간마다 `endDate` 경과 프로젝트를 내부 상태 `ENDED`로 변경 |
+| 회의록 생성 차단 | 내부 상태 `ENDED`, `DELETED`, 종료일 경과 상태에서 차단 |
+| 영구 삭제 | 프로젝트 관련 업무/회의록/진행률 삭제 후 프로젝트 row 삭제 |
+
+### 10.3 프로젝트 응답 호환 필드
+
+| 응답 필드 | 값 기준 | 비고 |
+| --- | --- | --- |
+| `endDate` | `project.endDate` | 백엔드 신규 표준 필드 |
+| `disposalDeadline` | `project.endDate` | 기존 프론트 호환 필드 |
+| `status` | `ProjectStatus.toClientStatus()` | 기존 프론트 호환 상태값 유지 |
+| `endedAt` | `project.endedAt` | 백엔드 신규 표준 필드 |
+| `disposedAt` | `project.endedAt` | 기존 프론트 호환 필드 |
+| `deletedAt` | `project.deletedAt` | 사용자 삭제 시각 |
+
+상세 백엔드 공용 메서드 기준은 `docs/BACKEND_PROJECT_LIFECYCLE.md`를 참고합니다.

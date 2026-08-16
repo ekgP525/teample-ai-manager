@@ -9,6 +9,7 @@ import com.teample.entity.Project;
 import com.teample.entity.ProjectTodo;
 import com.teample.entity.TodoMemberProgress;
 import com.teample.exception.TodoAccessDeniedException;
+import com.teample.repository.IntegratedTodoRepository;
 import com.teample.repository.ProjectRepository;
 import com.teample.repository.ProjectTodoRepository;
 import com.teample.repository.TodoMemberProgressRepository;
@@ -36,6 +37,9 @@ class DashboardServiceTest {
     private ProjectRepository projectRepository;
 
     @Mock
+    private IntegratedTodoRepository integratedTodoRepository;
+
+    @Mock
     private ProjectTodoRepository projectTodoRepository;
 
     @Mock
@@ -55,6 +59,7 @@ class DashboardServiceTest {
     void setUp() {
         dashboardService = new DashboardService(
                 projectRepository,
+                integratedTodoRepository,
                 projectTodoRepository,
                 todoMemberProgressRepository,
                 todoProgressSyncService

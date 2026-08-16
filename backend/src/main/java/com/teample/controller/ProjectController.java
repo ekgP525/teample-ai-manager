@@ -22,6 +22,11 @@ public class ProjectController {
         return ResponseEntity.ok(projectService.findAll());
     }
 
+    @GetMapping("/trash")
+    public ResponseEntity<List<ProjectResponse>> listDeletedProjects() {
+        return ResponseEntity.ok(projectService.findTrash());
+    }
+
     @PostMapping
     public ResponseEntity<ProjectResponse> createProject(@Valid @RequestBody ProjectRequest request) {
         return ResponseEntity.ok(projectService.create(request));
@@ -37,6 +42,21 @@ public class ProjectController {
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteProject(@PathVariable String id) {
         if (projectService.delete(id)) {
+            return ResponseEntity.noContent().build();
+        }
+        return ResponseEntity.notFound().build();
+    }
+
+    @PatchMapping("/{id}/restore")
+    public ResponseEntity<ProjectResponse> restoreProject(@PathVariable String id) {
+        return projectService.restore(id)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    @DeleteMapping("/{id}/permanent")
+    public ResponseEntity<Void> permanentlyDeleteProject(@PathVariable String id) {
+        if (projectService.permanentlyDelete(id)) {
             return ResponseEntity.noContent().build();
         }
         return ResponseEntity.notFound().build();
