@@ -3,12 +3,10 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { getProjects } from "@/lib/api/projects";
-import { getHiddenProjectIds } from "@/lib/project-visibility";
 import type { Project } from "@/types/minutes";
 
 export default function DashboardPage() {
   const [projects, setProjects] = useState<Project[]>([]);
-  const [deletedProjectIds] = useState<string[]>(getHiddenProjectIds);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -53,9 +51,8 @@ export default function DashboardPage() {
     return () => controller.abort();
   }, []);
 
-  const deletedProjectIdSet = new Set(deletedProjectIds);
   const visibleProjects = projects.filter(
-    (project) => !deletedProjectIdSet.has(project.id)
+    (project) => project.status !== "DELETED"
   );
   const currentProjects = visibleProjects.filter(
     (project) => project.status !== "DISPOSED"
@@ -147,6 +144,7 @@ function ProjectStatusBadge({ status }: { status: Project["status"] }) {
     ACTIVE: "진행 중",
     DISPOSAL_SCHEDULED: "종료 예정",
     DISPOSED: "종료됨",
+    DELETED: "삭제됨",
   };
   const classes: Record<Project["status"], string> = {
     ACTIVE:
@@ -155,6 +153,8 @@ function ProjectStatusBadge({ status }: { status: Project["status"] }) {
       "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
     DISPOSED:
       "bg-zinc-200 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300",
+    DELETED:
+      "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300",
   };
 
   return (

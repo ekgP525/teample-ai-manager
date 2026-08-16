@@ -28,7 +28,13 @@ interface TodoDropTarget {
   position: "before" | "after";
 }
 
-export function ProjectTodoBoard({ projectId }: { projectId: string }) {
+export function ProjectTodoBoard({
+  projectId,
+  readOnly = false,
+}: {
+  projectId: string;
+  readOnly?: boolean;
+}) {
   const [status, setStatus] = useState<ProjectTodoStatus>("TODO");
   const [todos, setTodos] = useState<ProjectTodo[]>([]);
   const [loadedKey, setLoadedKey] = useState("");
@@ -108,7 +114,7 @@ export function ProjectTodoBoard({ projectId }: { projectId: string }) {
   };
 
   const handleStatusChange = async (todo: ProjectTodo) => {
-    if (pendingTodoId || exitingTodoId || isEditingOrder) return;
+    if (readOnly || pendingTodoId || exitingTodoId || isEditingOrder) return;
 
     const previousStatus = todo.status;
     const nextStatus: ProjectTodoStatus =
@@ -375,7 +381,9 @@ export function ProjectTodoBoard({ projectId }: { projectId: string }) {
         <div>
           <h2 className="text-lg font-semibold">프로젝트 업무</h2>
           <p className="mt-0.5 text-xs text-zinc-500">
-            회의록에서 추출된 업무를 완료 처리하거나 우선순위대로 정렬할 수 있습니다.
+            {readOnly
+              ? "회의록에서 추출된 업무를 확인할 수 있습니다."
+              : "회의록에서 추출된 업무를 완료 처리하거나 우선순위대로 정렬할 수 있습니다."}
           </p>
         </div>
         <div className="flex flex-col gap-2 sm:items-end">
@@ -404,7 +412,10 @@ export function ProjectTodoBoard({ projectId }: { projectId: string }) {
             ))}
           </div>
 
-          {status === "TODO" && loadedKey === currentKey && todos.length > 1 && (
+          {!readOnly &&
+            status === "TODO" &&
+            loadedKey === currentKey &&
+            todos.length > 1 && (
             isEditingOrder ? (
               <div className="flex items-center gap-2">
                 <span className="mr-1 hidden text-xs text-zinc-500 sm:inline">
@@ -512,7 +523,10 @@ export function ProjectTodoBoard({ projectId }: { projectId: string }) {
                     type="button"
                     onClick={() => void handleStatusChange(todo)}
                     disabled={Boolean(
-                      pendingTodoId || exitingTodoId || isEditingOrder
+                      readOnly ||
+                        pendingTodoId ||
+                        exitingTodoId ||
+                        isEditingOrder
                     )}
                     aria-pressed={todo.status === "COMPLETED"}
                     aria-label={todo.status === "TODO" ? "업무 완료 처리" : "업무 복원"}

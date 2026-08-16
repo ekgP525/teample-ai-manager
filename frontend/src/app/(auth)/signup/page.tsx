@@ -19,23 +19,27 @@ export default function SignupPage() {
     setMessage(null);
     setIsLoading(true);
 
-    const { error: signUpError } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: { name },
-        emailRedirectTo: `${window.location.origin}/login`,
-      },
-    });
+    try {
+      const { error: signUpError } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: { name },
+          emailRedirectTo: `${window.location.origin}/login`,
+        },
+      });
 
-    setIsLoading(false);
+      if (signUpError) {
+        setError(signUpError.message);
+        return;
+      }
 
-    if (signUpError) {
-      setError(signUpError.message);
-      return;
+      setMessage("가입 확인 이메일을 보냈습니다. 이메일을 확인한 뒤 로그인해 주세요.");
+    } catch {
+      setError("인증 서버에 연결하지 못했습니다. 환경 설정과 네트워크를 확인해 주세요.");
+    } finally {
+      setIsLoading(false);
     }
-
-    setMessage("가입 확인 이메일을 보냈습니다. 이메일을 확인한 뒤 로그인해 주세요.");
   }
 
   async function signUpWithOAuth(provider: "google" | "kakao") {
@@ -43,10 +47,15 @@ export default function SignupPage() {
     setMessage(null);
     setIsLoading(true);
 
-    const { error: signInError } = await signInWithOAuth(provider);
+    try {
+      const { error: signInError } = await signInWithOAuth(provider);
 
-    if (signInError) {
-      setError(`${provider === "google" ? "Google" : "카카오"} 로그인에 실패했습니다. 다시 시도해 주세요.`);
+      if (signInError) {
+        setError(`${provider === "google" ? "Google" : "카카오"} 로그인에 실패했습니다. 다시 시도해 주세요.`);
+        setIsLoading(false);
+      }
+    } catch {
+      setError("인증 서버에 연결하지 못했습니다. 환경 설정과 네트워크를 확인해 주세요.");
       setIsLoading(false);
     }
   }

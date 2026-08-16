@@ -1,8 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import Link from "next/link";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { createMinutes } from "@/lib/api/minutes";
+import { getProject } from "@/lib/api/projects";
+import type { Project } from "@/types/minutes";
 
 export default function NewMinutesPage() {
   const router = useRouter();
@@ -10,13 +13,83 @@ export default function NewMinutesPage() {
   const [title, setTitle] = useState("");
   const [meetingDate, setMeetingDate] = useState("");
   const [rawText, setRawText] = useState("");
+  const [projectStatus, setProjectStatus] =
+    useState<Project["status"] | null>(null);
+  const [loadedProjectId, setLoadedProjectId] = useState("");
+  const [isCheckingProject, setIsCheckingProject] = useState(true);
+  const [projectError, setProjectError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+
+  const loadProject = useCallback(
+    async (signal?: AbortSignal) => {
+      try {
+        const project = await getProject(id, signal);
+        setProjectStatus(project.status);
+        setProjectError("");
+      } catch (loadError) {
+        if (signal?.aborted) return;
+
+        setProjectStatus(null);
+        setProjectError(
+          loadError instanceof Error
+            ? loadError.message
+            : "프로젝트를 확인하지 못했습니다."
+        );
+      } finally {
+        if (!signal?.aborted) {
+          setLoadedProjectId(id);
+          setIsCheckingProject(false);
+        }
+      }
+    },
+    [id]
+  );
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    void getProject(id, controller.signal)
+      .then((project) => {
+        setProjectStatus(project.status);
+        setProjectError("");
+      })
+      .catch((loadError: unknown) => {
+        if (controller.signal.aborted) return;
+
+        setProjectStatus(null);
+        setProjectError(
+          loadError instanceof Error
+            ? loadError.message
+            : "프로젝트를 확인하지 못했습니다."
+        );
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setLoadedProjectId(id);
+          setIsCheckingProject(false);
+        }
+      });
+
+    return () => controller.abort();
+  }, [id]);
+
+  const handleProjectRetry = () => {
+    setIsCheckingProject(true);
+    setLoadedProjectId("");
+    setProjectError("");
+    void loadProject();
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (isLoading) return;
+    if (
+      isLoading ||
+      (projectStatus !== "ACTIVE" && projectStatus !== "DISPOSAL_SCHEDULED")
+    ) {
+      return;
+    }
 
     const trimmedRawText = rawText.trim();
     if (!meetingDate) {
@@ -47,6 +120,61 @@ export default function NewMinutesPage() {
       setIsLoading(false);
     }
   };
+
+  if (isCheckingProject || loadedProjectId !== id) {
+    return (
+      <main className="flex flex-1 items-center justify-center px-4 py-12">
+        <p aria-live="polite" className="text-zinc-500">
+          프로젝트를 확인하는 중...
+        </p>
+      </main>
+    );
+  }
+
+  if (projectError) {
+    return (
+      <main className="flex flex-1 items-center justify-center px-4 py-12">
+        <div
+          role="alert"
+          className="w-full max-w-lg rounded-lg border border-red-200 bg-red-50 p-6 text-center dark:border-red-900 dark:bg-red-950"
+        >
+          <p className="text-sm text-red-600 dark:text-red-400">
+            {projectError}
+          </p>
+          <button
+            type="button"
+            onClick={handleProjectRetry}
+            className="mt-4 rounded-lg border border-red-300 px-3 py-1.5 text-sm text-red-600 transition-colors hover:bg-red-100 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900"
+          >
+            다시 시도
+          </button>
+        </div>
+      </main>
+    );
+  }
+
+  if (projectStatus === "DISPOSED" || projectStatus === "DELETED") {
+    const isDeleted = projectStatus === "DELETED";
+
+    return (
+      <main className="flex flex-1 items-center justify-center px-4 py-12">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold">새 회의록을 만들 수 없습니다.</h1>
+          <p className="mt-2 text-sm text-zinc-500">
+            {isDeleted
+              ? "삭제된 프로젝트를 복원한 뒤 다시 시도해 주세요."
+              : "종료된 프로젝트에는 새 회의록을 추가할 수 없습니다."}
+          </p>
+          <Link
+            href={`/projects/${id}`}
+            className="mt-6 inline-block rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+          >
+            프로젝트로 돌아가기
+          </Link>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="flex flex-1 flex-col items-center px-4 py-8 sm:py-12">

@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { ExportMenu } from "@/components/export-menu";
 import { ApiError } from "@/lib/api/client";
 import { getMinutes } from "@/lib/api/minutes";
+import { getProject } from "@/lib/api/projects";
 import type { Minutes, MinutesEvidence } from "@/types/minutes";
 import { DeleteMinutesButton } from "./delete-button";
 
@@ -16,16 +17,21 @@ export default function MinutesPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [minutesNotFound, setMinutesNotFound] = useState(false);
+  const [isReadOnly, setIsReadOnly] = useState(false);
   const currentKey = `${id}/${minutesId}`;
 
   const loadMinutes = useCallback(
     async (signal?: AbortSignal) => {
       try {
-        const data = await getMinutes(id, minutesId, {
-          cache: "no-store",
-          signal,
-        });
-        setMinutes(data);
+        const [minutesData, projectData] = await Promise.all([
+          getMinutes(id, minutesId, {
+            cache: "no-store",
+            signal,
+          }),
+          getProject(id, signal),
+        ]);
+        setMinutes(minutesData);
+        setIsReadOnly(projectData.status === "DELETED");
         setLoadError("");
         setMinutesNotFound(false);
       } catch (error) {
@@ -61,12 +67,16 @@ export default function MinutesPage() {
   useEffect(() => {
     const controller = new AbortController();
 
-    void getMinutes(id, minutesId, {
-      cache: "no-store",
-      signal: controller.signal,
-    })
-      .then((data) => {
-        setMinutes(data);
+    void Promise.all([
+      getMinutes(id, minutesId, {
+        cache: "no-store",
+        signal: controller.signal,
+      }),
+      getProject(id, controller.signal),
+    ])
+      .then(([minutesData, projectData]) => {
+        setMinutes(minutesData);
+        setIsReadOnly(projectData.status === "DELETED");
         setLoadError("");
         setMinutesNotFound(false);
       })
@@ -156,12 +166,14 @@ export default function MinutesPage() {
           </div>
           <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto print:hidden">
             <ExportMenu minutes={minutes} />
-            <Link
-              href={`/projects/${id}/minutes/${minutesId}/edit`}
-              className="rounded-lg border border-zinc-300 px-3 py-1.5 text-center text-sm transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
-            >
-              편집
-            </Link>
+            {!isReadOnly && (
+              <Link
+                href={`/projects/${id}/minutes/${minutesId}/edit`}
+                className="rounded-lg border border-zinc-300 px-3 py-1.5 text-center text-sm transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+              >
+                편집
+              </Link>
+            )}
             <Link
               href={`/projects/${id}`}
               className="col-span-2 rounded-lg border border-zinc-300 px-3 py-1.5 text-center text-sm transition-colors hover:bg-zinc-100 sm:col-auto dark:border-zinc-700 dark:hover:bg-zinc-800"
@@ -170,6 +182,12 @@ export default function MinutesPage() {
             </Link>
           </div>
         </div>
+
+        {isReadOnly && (
+          <p className="mb-6 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 print:hidden dark:bg-red-950 dark:text-red-300">
+            삭제된 프로젝트의 회의록입니다. 프로젝트를 복원하기 전까지 편집하거나 삭제할 수 없습니다.
+          </p>
+        )}
 
         <section className="mb-6">
           <h2 className="mb-2 text-lg font-semibold">회의 주제</h2>
@@ -284,9 +302,11 @@ export default function MinutesPage() {
 
         {minutes.evidence && <EvidenceSection evidence={minutes.evidence} />}
 
-        <div className="mt-10 border-t border-zinc-200 pt-6 print:hidden dark:border-zinc-700">
-          <DeleteMinutesButton projectId={id} minutesId={minutesId} />
-        </div>
+        {!isReadOnly && (
+          <div className="mt-10 border-t border-zinc-200 pt-6 print:hidden dark:border-zinc-700">
+            <DeleteMinutesButton projectId={id} minutesId={minutesId} />
+          </div>
+        )}
       </div>
     </main>
   );
