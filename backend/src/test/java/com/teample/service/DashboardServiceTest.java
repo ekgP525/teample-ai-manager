@@ -182,6 +182,58 @@ class DashboardServiceTest {
         assertThat(bobDashboard.getProgressRate()).isZero();
     }
 
+    @Test
+    void teamProgressSummaryIgnoresUnassignedTodosConsistently() {
+        ProjectTodo unassignedTodo = ProjectTodo.builder()
+                .id("todo-unassigned")
+                .project(project)
+                .minutes(minutes)
+                .sourceIndex(2)
+                .sourceAssignee("unknown")
+                .task("Unassigned follow-up")
+                .deadline("2099-01-03")
+                .build();
+        TodoMemberProgress doneAliceProgress = progress("assignment-alice-done", "alice", true, sharedTodo);
+        TodoMemberProgress pendingBobProgress = progress("assignment-bob-pending", "bob", false, sharedTodo);
+
+        when(projectRepository.findById("project-1")).thenReturn(Optional.of(project));
+        when(todoMemberProgressRepository.findByProjectIdAndAssignedTrue("project-1"))
+                .thenReturn(List.of(doneAliceProgress, pendingBobProgress));
+        when(projectTodoRepository.findByProjectId("project-1"))
+                .thenReturn(List.of(sharedTodo, unassignedTodo));
+
+        TeamProjectDashboardResponse dashboard = dashboardService.findTeamProjectDashboard("project-1", "alice")
+                .orElseThrow();
+
+        assertThat(dashboard.getTodos()).hasSize(2);
+        assertThat(dashboard.getTodos())
+                .filteredOn(todo -> todo.getTodoId().equals("todo-unassigned"))
+                .singleElement()
+                .satisfies(todo -> assertThat(todo.getAssignments()).isEmpty());
+        assertThat(dashboard.getTotalTodoCount()).isEqualTo(2);
+        assertThat(dashboard.getCompletedTodoCount()).isEqualTo(1);
+        assertThat(dashboard.getPendingTodoCount()).isEqualTo(1);
+        assertThat(dashboard.getProgressRate()).isEqualTo(50);
+    }
+
+    @Test
+    void teamProgressSummaryHandlesEmptyTotalWithExistingProgressPolicy() {
+        when(projectRepository.findById("project-1")).thenReturn(Optional.of(project));
+        when(todoMemberProgressRepository.findByProjectIdAndAssignedTrue("project-1"))
+                .thenReturn(List.of());
+        when(projectTodoRepository.findByProjectId("project-1"))
+                .thenReturn(List.of());
+
+        TeamProjectDashboardResponse dashboard = dashboardService.findTeamProjectDashboard("project-1", "alice")
+                .orElseThrow();
+
+        assertThat(dashboard.getTotalTodoCount()).isZero();
+        assertThat(dashboard.getCompletedTodoCount()).isZero();
+        assertThat(dashboard.getPendingTodoCount()).isZero();
+        assertThat(dashboard.getProgressRate()).isEqualTo(100);
+        assertThat(dashboard.getMembers()).hasSize(2);
+        assertThat(dashboard.getTodos()).isEmpty();
+    }
 
     @Test
     void nonProjectMemberCannotReadProjectDashboard() {
