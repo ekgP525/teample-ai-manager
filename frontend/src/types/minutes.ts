@@ -40,9 +40,12 @@ export interface Project {
   name: string;
   members: string[];
   createdAt: string;
+  endDate: string | null;
   disposalDeadline: string | null;
-  status: "ACTIVE" | "DISPOSAL_SCHEDULED" | "DISPOSED";
+  status: "ACTIVE" | "DISPOSAL_SCHEDULED" | "DISPOSED" | "DELETED";
+  endedAt: string | null;
   disposedAt: string | null;
+  deletedAt: string | null;
 }
 
 export interface ProjectTodo {

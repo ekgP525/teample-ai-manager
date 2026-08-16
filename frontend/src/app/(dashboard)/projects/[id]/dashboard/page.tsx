@@ -37,9 +37,11 @@ export default function ProjectDashboardPage() {
       .then((data) => {
         setProject(data);
         setCurrentUser((selected) =>
-          selected && data.members.includes(selected)
-            ? selected
-            : data.members[0] || ""
+          data.status === "DELETED"
+            ? ""
+            : selected && data.members.includes(selected)
+              ? selected
+              : data.members[0] || ""
         );
         setProjectError("");
       })
@@ -149,7 +151,27 @@ export default function ProjectDashboardPage() {
     return <PageError message={projectError || "프로젝트를 찾을 수 없습니다."} />;
   }
 
+  if (project.status === "DELETED") {
+    return (
+      <main className="flex flex-1 items-center justify-center px-4 py-12">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold">삭제된 프로젝트입니다.</h1>
+          <p className="mt-2 text-sm text-zinc-500">
+            진행률을 확인하려면 프로젝트를 먼저 복원해 주세요.
+          </p>
+          <Link
+            href={`/projects/${id}`}
+            className="mt-6 inline-block rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+          >
+            프로젝트로 돌아가기
+          </Link>
+        </div>
+      </main>
+    );
+  }
+
   const dashboardIsLoading = Boolean(currentUser) && loadedDashboardKey !== dashboardKey;
+  const overallProgress = getOverallProgress(teamDashboard);
 
   return (
     <main className="flex flex-1 flex-col items-center px-4 py-8 sm:py-12">
@@ -181,12 +203,6 @@ export default function ProjectDashboardPage() {
             </h1>
           </div>
           <div className="flex flex-col gap-2 sm:items-end">
-            <Link
-              href="/dashboard"
-              className="text-sm text-zinc-500 hover:text-zinc-900 hover:underline dark:hover:text-zinc-100"
-            >
-              다른 프로젝트 선택
-            </Link>
             <label className="flex flex-col gap-1 text-sm font-medium">
               사용자 선택
               <select
@@ -215,10 +231,30 @@ export default function ProjectDashboardPage() {
           <PageError message={dashboardError} onRetry={reloadDashboards} embedded />
         ) : myDashboard && teamDashboard ? (
           <div className="space-y-10">
+            <section className="rounded-xl border border-zinc-200 bg-zinc-50 p-5 sm:p-6 dark:border-zinc-700 dark:bg-zinc-900/60">
+              <div className="mb-4 flex items-end justify-between gap-4">
+                <div>
+                  <h2 className="text-xl font-semibold">전체 진행률</h2>
+                  <p className="mt-1 text-sm text-zinc-500">
+                    프로젝트에 배정된 모든 팀원 업무를 기준으로 계산합니다.
+                  </p>
+                </div>
+                <strong className="shrink-0 text-3xl tabular-nums">
+                  {overallProgress.rate}%
+                </strong>
+              </div>
+              <ProgressBar value={overallProgress.rate} />
+              <p className="mt-2 text-right text-sm text-zinc-500">
+                {overallProgress.completed}/{overallProgress.total} 완료
+              </p>
+            </section>
+
             <section>
               <div className="mb-4 flex items-end justify-between gap-4">
                 <div>
-                  <h2 className="text-xl font-semibold">내 진행 상황</h2>
+                  <h2 className="text-xl font-semibold">
+                    {myDashboard.memberName || currentUser} 진행 상황
+                  </h2>
                   <p className="mt-1 text-sm text-zinc-500">
                     다음 목표: {myDashboard.target || "등록된 목표 없음"}
                   </p>
@@ -314,6 +350,27 @@ export default function ProjectDashboardPage() {
       </div>
     </main>
   );
+}
+
+function getOverallProgress(teamDashboard: TeamProjectDashboard | null) {
+  if (!teamDashboard) {
+    return { total: 0, completed: 0, rate: 0 };
+  }
+
+  const total = teamDashboard.members.reduce(
+    (sum, member) => sum + member.totalTodoCount,
+    0
+  );
+  const completed = teamDashboard.members.reduce(
+    (sum, member) => sum + member.completedTodoCount,
+    0
+  );
+
+  return {
+    total,
+    completed,
+    rate: total === 0 ? 0 : Math.round((completed * 100) / total),
+  };
 }
 
 function EmptyState({ message }: { message: string }) {

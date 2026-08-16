@@ -4,12 +4,19 @@ import { apiRequest } from "./client";
 export interface CreateProjectInput {
   name: string;
   members: string[];
-  disposalDeadline?: string;
+  endDate?: string;
 }
 
 export function getProjects(signal?: AbortSignal) {
   return apiRequest<Project[]>("/api/projects", {
     errorMessage: "프로젝트를 불러오지 못했습니다.",
+    signal,
+  });
+}
+
+export function getDeletedProjects(signal?: AbortSignal) {
+  return apiRequest<Project[]>("/api/projects/trash", {
+    errorMessage: "삭제된 프로젝트를 불러오지 못했습니다.",
     signal,
   });
 }
@@ -34,4 +41,24 @@ export function deleteProject(projectId: string) {
     method: "DELETE",
     errorMessage: "프로젝트를 삭제하지 못했습니다.",
   });
+}
+
+export function restoreProject(projectId: string) {
+  return apiRequest<Project>(
+    `/api/projects/${encodeURIComponent(projectId)}/restore`,
+    {
+      method: "PATCH",
+      errorMessage: "프로젝트를 복원하지 못했습니다.",
+    }
+  );
+}
+
+export function permanentlyDeleteProject(projectId: string) {
+  return apiRequest<void>(
+    `/api/projects/${encodeURIComponent(projectId)}/permanent`,
+    {
+      method: "DELETE",
+      errorMessage: "프로젝트를 영구 삭제하지 못했습니다.",
+    }
+  );
 }

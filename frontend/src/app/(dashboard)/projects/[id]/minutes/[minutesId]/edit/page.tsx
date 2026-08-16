@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ApiError } from "@/lib/api/client";
 import { getMinutes, updateMinutes } from "@/lib/api/minutes";
+import { getProject } from "@/lib/api/projects";
 import type { Minutes, Todo } from "@/types/minutes";
 
 export default function EditMinutesPage() {
@@ -24,6 +25,7 @@ export default function EditMinutesPage() {
   const [loadError, setLoadError] = useState("");
   const [saveError, setSaveError] = useState("");
   const [minutesNotFound, setMinutesNotFound] = useState(false);
+  const [isProjectDeleted, setIsProjectDeleted] = useState(false);
   const currentKey = `${id}/${minutesId}`;
 
   const applyMinutes = (data: Minutes) => {
@@ -39,8 +41,12 @@ export default function EditMinutesPage() {
   const loadMinutes = useCallback(
     async (signal?: AbortSignal) => {
       try {
-        const data = await getMinutes(id, minutesId, { signal });
-        applyMinutes(data);
+        const [minutesData, projectData] = await Promise.all([
+          getMinutes(id, minutesId, { signal }),
+          getProject(id, signal),
+        ]);
+        applyMinutes(minutesData);
+        setIsProjectDeleted(projectData.status === "DELETED");
         setLoadError("");
         setMinutesNotFound(false);
       } catch (error) {
@@ -75,15 +81,19 @@ export default function EditMinutesPage() {
   useEffect(() => {
     const controller = new AbortController();
 
-    void getMinutes(id, minutesId, { signal: controller.signal })
-      .then((data) => {
-        setTitle(data.title || "");
-        setTopic(data.topic || "");
-        setDiscussions(data.discussions || []);
-        setDecisions(data.decisions || []);
-        setPending(data.pending || []);
-        setTodos(data.todos || []);
-        setNextAgenda(data.nextAgenda || []);
+    void Promise.all([
+      getMinutes(id, minutesId, { signal: controller.signal }),
+      getProject(id, controller.signal),
+    ])
+      .then(([minutesData, projectData]) => {
+        setTitle(minutesData.title || "");
+        setTopic(minutesData.topic || "");
+        setDiscussions(minutesData.discussions || []);
+        setDecisions(minutesData.decisions || []);
+        setPending(minutesData.pending || []);
+        setTodos(minutesData.todos || []);
+        setNextAgenda(minutesData.nextAgenda || []);
+        setIsProjectDeleted(projectData.status === "DELETED");
         setLoadError("");
         setMinutesNotFound(false);
       })
@@ -230,6 +240,25 @@ export default function EditMinutesPage() {
             className="mt-6 inline-block rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
           >
             프로젝트로 돌아가기
+          </Link>
+        </div>
+      </main>
+    );
+  }
+
+  if (isProjectDeleted) {
+    return (
+      <main className="flex flex-1 items-center justify-center px-4 py-12">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold">편집할 수 없는 회의록입니다.</h1>
+          <p className="mt-2 text-sm text-zinc-500">
+            삭제된 프로젝트를 복원한 뒤 다시 시도해 주세요.
+          </p>
+          <Link
+            href={`/projects/${id}/minutes/${minutesId}`}
+            className="mt-6 inline-block rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+          >
+            회의록으로 돌아가기
           </Link>
         </div>
       </main>

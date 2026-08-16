@@ -21,13 +21,22 @@ function LoginForm() {
     let isMounted = true;
 
     async function redirectIfSessionExists() {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+      try {
+        const {
+          data: { session },
+          error: sessionError,
+        } = await supabase.auth.getSession();
 
-      if (session && isMounted) {
-        router.replace(next);
-        router.refresh();
+        if (sessionError) throw sessionError;
+
+        if (session && isMounted) {
+          router.replace(next);
+          router.refresh();
+        }
+      } catch {
+        if (isMounted) {
+          setError("인증 서버에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+        }
       }
     }
 
@@ -43,29 +52,39 @@ function LoginForm() {
     setError(null);
     setIsLoading(true);
 
-    const { error: signInError } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    try {
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
-    if (signInError) {
-      setError("이메일 또는 비밀번호를 확인해 주세요.");
+      if (signInError) {
+        setError("이메일 또는 비밀번호를 확인해 주세요.");
+        return;
+      }
+
+      router.replace(next);
+      router.refresh();
+    } catch {
+      setError("인증 서버에 연결하지 못했습니다. 환경 설정과 네트워크를 확인해 주세요.");
+    } finally {
       setIsLoading(false);
-      return;
     }
-
-    router.replace(next);
-    router.refresh();
   }
 
   async function signInWithOAuth(provider: "google" | "kakao") {
     setError(null);
     setIsLoading(true);
 
-    const { error: signInError } = await signInWithSocialOAuth(provider, next);
+    try {
+      const { error: signInError } = await signInWithSocialOAuth(provider, next);
 
-    if (signInError) {
-      setError(`${provider === "google" ? "Google" : "카카오"} 로그인에 실패했습니다. 다시 시도해 주세요.`);
+      if (signInError) {
+        setError(`${provider === "google" ? "Google" : "카카오"} 로그인에 실패했습니다. 다시 시도해 주세요.`);
+        setIsLoading(false);
+      }
+    } catch {
+      setError("인증 서버에 연결하지 못했습니다. 환경 설정과 네트워크를 확인해 주세요.");
       setIsLoading(false);
     }
   }

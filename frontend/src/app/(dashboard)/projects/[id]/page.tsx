@@ -6,11 +6,12 @@ import { useParams, useRouter } from "next/navigation";
 import { ProjectTodoBoard } from "@/components/project-todo-board";
 import { ApiError } from "@/lib/api/client";
 import { getProjectMinutes } from "@/lib/api/minutes";
-import { deleteProject, getProject } from "@/lib/api/projects";
 import {
-  getHiddenProjectIds,
-  removeProjectFromList,
-} from "@/lib/project-visibility";
+  deleteProject,
+  getProject,
+  permanentlyDeleteProject,
+  restoreProject,
+} from "@/lib/api/projects";
 import type { MinutesSummary, Project } from "@/types/minutes";
 
 async function fetchProjectData(projectId: string, signal?: AbortSignal) {
@@ -34,10 +35,9 @@ export default function ProjectDetailPage() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
-  const [confirmRemove, setConfirmRemove] = useState(false);
-  const [isDeletedProject] = useState(() =>
-    getHiddenProjectIds().includes(id)
-  );
+  const [isRestoring, setIsRestoring] = useState(false);
+  const [confirmPermanentDelete, setConfirmPermanentDelete] = useState(false);
+  const [isPermanentlyDeleting, setIsPermanentlyDeleting] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -112,7 +112,6 @@ export default function ProjectDetailPage() {
 
     try {
       await deleteProject(id);
-      removeProjectFromList(id);
       router.push("/projects");
     } catch (error) {
       setDeleteError(
@@ -125,14 +124,40 @@ export default function ProjectDetailPage() {
     }
   };
 
-  const handleRemove = () => {
+  const handleRestore = async () => {
+    setIsRestoring(true);
     setDeleteError("");
 
     try {
-      removeProjectFromList(id);
-      router.replace("/projects");
-    } catch {
-      setDeleteError("프로젝트를 목록에서 삭제하지 못했습니다.");
+      const restored = await restoreProject(id);
+      setProject(restored);
+      setConfirmPermanentDelete(false);
+    } catch (error) {
+      setDeleteError(
+        error instanceof Error
+          ? error.message
+          : "프로젝트를 복원하지 못했습니다."
+      );
+    } finally {
+      setIsRestoring(false);
+    }
+  };
+
+  const handlePermanentDelete = async () => {
+    setIsPermanentlyDeleting(true);
+    setDeleteError("");
+
+    try {
+      await permanentlyDeleteProject(id);
+      router.replace("/trash");
+    } catch (error) {
+      setDeleteError(
+        error instanceof Error
+          ? error.message
+          : "프로젝트를 영구 삭제하지 못했습니다."
+      );
+    } finally {
+      setIsPermanentlyDeleting(false);
     }
   };
 
@@ -187,6 +212,12 @@ export default function ProjectDetailPage() {
     );
   }
 
+  const isDeletedProject = project.status === "DELETED";
+  const isEndedProject = project.status === "DISPOSED";
+  const canCreateMinutes = !isDeletedProject && !isEndedProject;
+  const endDate = project.endDate ?? project.disposalDeadline;
+  const endedAt = project.endedAt ?? project.disposedAt;
+
   return (
     <main className="flex flex-1 flex-col items-center px-4 py-8 sm:py-12">
       <div className="w-full max-w-4xl">
@@ -197,25 +228,24 @@ export default function ProjectDetailPage() {
               팀원: {project.members.join(", ")}
             </p>
             <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-              <ProjectStatusBadge
-                status={project.status}
-                isDeleted={isDeletedProject}
-              />
-              {project.disposalDeadline && (
+              <ProjectStatusBadge status={project.status} />
+              {endDate && (
                 <span className="text-zinc-500">
-                  종료 예정일 {project.disposalDeadline}
+                  종료 예정일 {endDate}
                 </span>
               )}
             </div>
           </div>
           <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:shrink-0">
-            <Link
-              href={`/projects/${id}/dashboard`}
-              className="flex-1 rounded-lg border border-zinc-300 px-4 py-2 text-center text-sm font-medium transition-colors hover:bg-zinc-100 sm:flex-none dark:border-zinc-700 dark:hover:bg-zinc-800"
-            >
-              진행률
-            </Link>
-            {project.status !== "DISPOSED" && (
+            {!isDeletedProject && (
+              <Link
+                href={`/projects/${id}/dashboard`}
+                className="flex-1 rounded-lg border border-zinc-300 px-4 py-2 text-center text-sm font-medium transition-colors hover:bg-zinc-100 sm:flex-none dark:border-zinc-700 dark:hover:bg-zinc-800"
+              >
+                진행률
+              </Link>
+            )}
+            {canCreateMinutes && (
               <Link
                 href={`/projects/${id}/new`}
                 className="flex-1 rounded-lg bg-zinc-900 px-4 py-2 text-center text-sm font-medium text-white transition-colors hover:bg-zinc-800 sm:flex-none dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
@@ -223,7 +253,7 @@ export default function ProjectDetailPage() {
                 새 회의록
               </Link>
             )}
-            {project.status !== "DISPOSED" && (!confirmDelete ? (
+            {!isDeletedProject && (!confirmDelete ? (
               <button
                 type="button"
                 onClick={() => {
@@ -257,38 +287,50 @@ export default function ProjectDetailPage() {
                 </button>
               </div>
             ))}
-            {project.status === "DISPOSED" && !isDeletedProject && (!confirmRemove ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setConfirmRemove(true);
-                  setDeleteError("");
-                }}
-                className="rounded-lg border border-red-300 px-3 py-2 text-sm text-red-500 transition-colors hover:bg-red-50 dark:border-red-800 dark:hover:bg-red-950"
-              >
-                프로젝트 삭제
-              </button>
-            ) : (
-              <div className="flex flex-1 items-center gap-2 sm:flex-none">
+            {isDeletedProject && (
+              <div className="flex w-full flex-wrap gap-2 sm:w-auto">
                 <button
                   type="button"
-                  onClick={handleRemove}
-                  className="flex-1 rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 sm:flex-none"
+                  onClick={() => void handleRestore()}
+                  disabled={isRestoring || isPermanentlyDeleting}
+                  className="flex-1 rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium transition-colors hover:bg-zinc-100 disabled:cursor-wait disabled:opacity-50 sm:flex-none dark:border-zinc-700 dark:hover:bg-zinc-800"
                 >
-                  삭제 확인
+                  {isRestoring ? "복원 중..." : "프로젝트 복원"}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setConfirmRemove(false);
-                    setDeleteError("");
-                  }}
-                  className="flex-1 rounded-lg border border-zinc-300 px-3 py-2 text-sm hover:bg-zinc-100 sm:flex-none dark:border-zinc-700 dark:hover:bg-zinc-800"
-                >
-                  취소
-                </button>
+                {!confirmPermanentDelete ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setConfirmPermanentDelete(true);
+                      setDeleteError("");
+                    }}
+                    disabled={isRestoring}
+                    className="flex-1 rounded-lg px-3 py-2 text-sm text-red-600 transition-colors hover:bg-red-50 disabled:opacity-50 sm:flex-none dark:text-red-400 dark:hover:bg-red-950"
+                  >
+                    영구 삭제
+                  </button>
+                ) : (
+                  <div className="flex flex-1 gap-2 sm:flex-none">
+                    <button
+                      type="button"
+                      onClick={() => void handlePermanentDelete()}
+                      disabled={isPermanentlyDeleting}
+                      className="flex-1 rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:cursor-wait disabled:opacity-50 sm:flex-none"
+                    >
+                      {isPermanentlyDeleting ? "삭제 중..." : "영구 삭제 확인"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmPermanentDelete(false)}
+                      disabled={isPermanentlyDeleting}
+                      className="flex-1 rounded-lg border border-zinc-300 px-3 py-2 text-sm transition-colors hover:bg-zinc-100 disabled:opacity-50 sm:flex-none dark:border-zinc-700 dark:hover:bg-zinc-800"
+                    >
+                      취소
+                    </button>
+                  </div>
+                )}
               </div>
-            ))}
+            )}
           </div>
         </div>
 
@@ -301,14 +343,27 @@ export default function ProjectDetailPage() {
           </p>
         )}
 
-        {project.status === "DISPOSED" && (
-          <p className="mb-6 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:bg-amber-950 dark:text-amber-300">
-            {isDeletedProject ? "삭제된" : "종료된"} 프로젝트입니다
-            {project.disposedAt ? ` (${project.disposedAt.slice(0, 10)})` : ""}. 기존 회의록과 업무는 확인할 수 있지만 새 회의록은 생성할 수 없습니다.
+        {confirmPermanentDelete && (
+          <p className="mb-6 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
+            영구 삭제하면 프로젝트의 회의록과 업무도 함께 삭제되며 되돌릴 수 없습니다.
           </p>
         )}
 
-        <ProjectTodoBoard projectId={id} />
+        {isEndedProject && (
+          <p className="mb-6 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:bg-amber-950 dark:text-amber-300">
+            종료된 프로젝트입니다
+            {endedAt ? ` (${endedAt.slice(0, 10)})` : ""}. 기존 회의록과 업무는 확인할 수 있지만 새 회의록은 생성할 수 없습니다.
+          </p>
+        )}
+
+        {isDeletedProject && (
+          <p className="mb-6 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
+            삭제된 프로젝트입니다
+            {project.deletedAt ? ` (${project.deletedAt.slice(0, 10)})` : ""}. 복원하기 전까지 기존 자료는 읽기 전용으로 표시됩니다.
+          </p>
+        )}
+
+        <ProjectTodoBoard projectId={id} readOnly={isDeletedProject} />
 
         {minutesList.length > 0 ? (
           <section>
@@ -338,7 +393,9 @@ export default function ProjectDetailPage() {
         ) : (
           <div className="rounded-lg border border-zinc-200 p-8 text-center dark:border-zinc-700">
             <p className="text-zinc-500">
-              아직 회의록이 없습니다. 새 회의록을 만들어보세요.
+              {canCreateMinutes
+                ? "아직 회의록이 없습니다. 새 회의록을 만들어보세요."
+                : "저장된 회의록이 없습니다."}
             </p>
           </div>
         )}
@@ -347,33 +404,25 @@ export default function ProjectDetailPage() {
   );
 }
 
-function ProjectStatusBadge({
-  status,
-  isDeleted = false,
-}: {
-  status: Project["status"];
-  isDeleted?: boolean;
-}) {
+function ProjectStatusBadge({ status }: { status: Project["status"] }) {
   const labels: Record<Project["status"], string> = {
     ACTIVE: "진행 중",
     DISPOSAL_SCHEDULED: "종료 예정",
     DISPOSED: "종료됨",
+    DELETED: "삭제됨",
   };
   const classes: Record<Project["status"], string> = {
     ACTIVE: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
     DISPOSAL_SCHEDULED: "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
     DISPOSED: "bg-zinc-200 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300",
+    DELETED: "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300",
   };
 
   return (
     <span
-      className={`rounded-full px-2 py-0.5 font-medium ${
-        isDeleted
-          ? "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300"
-          : classes[status]
-      }`}
+      className={`rounded-full px-2 py-0.5 font-medium ${classes[status]}`}
     >
-      {isDeleted ? "삭제됨" : labels[status]}
+      {labels[status]}
     </span>
   );
 }
