@@ -60,6 +60,10 @@ export interface TeamTodoProgress {
 export interface TeamProjectDashboard {
   projectId: string;
   projectName: string;
+  totalTodoCount: number;
+  completedTodoCount: number;
+  pendingTodoCount: number;
+  progressRate: number;
   members: TeamMemberProgress[];
   todos: TeamTodoProgress[];
 }
