@@ -14,6 +14,10 @@ import java.util.List;
 public class TeamProjectDashboardResponse {
     private String projectId;
     private String projectName;
+    private int totalTodoCount;
+    private int completedTodoCount;
+    private int pendingTodoCount;
+    private int progressRate;
     private List<TeamMemberProgressResponse> members;
     private List<TeamTodoProgressResponse> todos;
 }

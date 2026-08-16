@@ -208,10 +208,16 @@ public class DashboardService {
                 .sorted(projectTodoComparator())
                 .map(todo -> buildTeamTodoResponse(todo, progressByTodo.getOrDefault(todo.getId(), List.of())))
                 .toList();
+        int totalTodoCount = progressRows.size();
+        int completedTodoCount = countCompletedProgressRows(progressRows);
 
         return TeamProjectDashboardResponse.builder()
                 .projectId(project.getId())
                 .projectName(project.getName())
+                .totalTodoCount(totalTodoCount)
+                .completedTodoCount(completedTodoCount)
+                .pendingTodoCount(totalTodoCount - completedTodoCount)
+                .progressRate(calculateProgressRate(totalTodoCount, completedTodoCount))
                 .members(members)
                 .todos(todos)
                 .build();
@@ -493,6 +499,12 @@ public class DashboardService {
     private int countCompleted(List<TodoAssignmentResponse> todos) {
         return (int) todos.stream()
                 .filter(todo -> Boolean.TRUE.equals(todo.getCompleted()))
+                .count();
+    }
+
+    private int countCompletedProgressRows(List<TodoMemberProgress> progressRows) {
+        return (int) progressRows.stream()
+                .filter(progress -> Boolean.TRUE.equals(progress.getCompleted()))
                 .count();
     }
 

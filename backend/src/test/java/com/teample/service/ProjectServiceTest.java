@@ -14,6 +14,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -102,5 +103,74 @@ class ProjectServiceTest {
         assertThat(project.getStatus()).isEqualTo(ProjectStatus.DELETED);
         assertThat(project.getDeletedAt()).isNotNull();
         verify(projectRepository, never()).delete(any(Project.class));
+    }
+
+    @Test
+    void restoreOngoingProjectClearsDeletedAtAndBecomesActive() {
+        LocalDate today = LocalDate.of(2026, 8, 17);
+        LocalDateTime now = LocalDateTime.of(2026, 8, 17, 10, 0);
+        Project project = Project.builder()
+                .status(ProjectStatus.DELETED)
+                .deletedAt(now.minusDays(1))
+                .build();
+
+        project.restore(today, now);
+
+        assertThat(project.getDeletedAt()).isNull();
+        assertThat(project.getStatus()).isEqualTo(ProjectStatus.ACTIVE);
+        assertThat(project.isDeleted()).isFalse();
+    }
+
+    @Test
+    void restoreScheduledProjectRecalculatesEndScheduledStatus() {
+        LocalDate today = LocalDate.of(2026, 8, 17);
+        LocalDateTime now = LocalDateTime.of(2026, 8, 17, 10, 0);
+        Project project = Project.builder()
+                .status(ProjectStatus.DELETED)
+                .endDate(today.plusDays(1))
+                .deletedAt(now.minusDays(1))
+                .build();
+
+        project.restore(today, now);
+
+        assertThat(project.getDeletedAt()).isNull();
+        assertThat(project.getStatus()).isEqualTo(ProjectStatus.END_SCHEDULED);
+        assertThat(project.isDeleted()).isFalse();
+    }
+
+    @Test
+    void restoreExpiredProjectRecalculatesEndedStatus() {
+        LocalDate today = LocalDate.of(2026, 8, 17);
+        LocalDateTime now = LocalDateTime.of(2026, 8, 17, 10, 0);
+        Project project = Project.builder()
+                .status(ProjectStatus.DELETED)
+                .endDate(today.minusDays(1))
+                .deletedAt(now.minusDays(1))
+                .build();
+
+        project.restore(today, now);
+
+        assertThat(project.getDeletedAt()).isNull();
+        assertThat(project.getStatus()).isEqualTo(ProjectStatus.ENDED);
+        assertThat(project.getEndedAt()).isEqualTo(now);
+        assertThat(project.isDeleted()).isFalse();
+    }
+
+    @Test
+    void restoreServiceMovesProjectOutOfTrashStatus() {
+        LocalDateTime deletedAt = LocalDateTime.of(2026, 8, 16, 10, 0);
+        Project project = Project.builder()
+                .status(ProjectStatus.DELETED)
+                .deletedAt(deletedAt)
+                .build();
+        when(projectRepository.findById("project-id")).thenReturn(Optional.of(project));
+
+        Optional<ProjectResponse> response = service.restore("project-id");
+
+        assertThat(response).isPresent();
+        assertThat(response.get().getStatus()).isEqualTo("ACTIVE");
+        assertThat(response.get().getDeletedAt()).isNull();
+        assertThat(project.getStatus()).isEqualTo(ProjectStatus.ACTIVE);
+        assertThat(project.isDeleted()).isFalse();
     }
 }
