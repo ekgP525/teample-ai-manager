@@ -606,3 +606,279 @@ GET, POST, PUT, PATCH, DELETE, OPTIONS
 | `deletedAt` | `project.deletedAt` | 사용자 삭제 시각 |
 
 상세 백엔드 공용 메서드 기준은 `docs/BACKEND_PROJECT_LIFECYCLE.md`를 참고합니다.
+## 11. JWT 인증 및 계정 기반 팀원 API
+
+이 섹션은 `feat/minjae/JWT` 작업에서 추가된 백엔드 인증 기준입니다. 기존 프론트 호환 필드와 레거시 `X-Current-User-Id` 흐름은 즉시 제거하지 않고 유지합니다.
+
+### 11.1 Supabase JWT 인증
+
+보호된 API는 다음 헤더를 사용합니다.
+
+```http
+Authorization: Bearer <Supabase Access Token>
+```
+
+백엔드는 Supabase API를 매 요청마다 호출하지 않고, 백엔드 전용 환경 변수 `SUPABASE_JWT_SECRET`으로 JWT를 직접 검증합니다.
+
+검증 기준:
+
+- JWT header `alg`는 `HS256`이어야 합니다.
+- JWT signature를 `SUPABASE_JWT_SECRET` 기반 HMAC SHA-256으로 검증합니다.
+- JWT payload의 `exp` 만료 시간을 검증합니다.
+- JWT payload의 `sub`를 실제 로그인 사용자 ID로 사용합니다.
+- JWT payload의 `email`을 사용자 이메일로 사용합니다.
+- JWT payload의 `user_metadata.name`, `user_metadata.full_name`, `user_metadata.display_name` 중 첫 번째 값을 표시 이름 후보로 사용합니다.
+- 표시 이름 후보가 없으면 email prefix를 사용하고, email도 없으면 `sub`를 사용합니다.
+- JWT 원문은 로그에 출력하지 않습니다.
+
+백엔드 `.env` 필요 값:
+
+```env
+SUPABASE_JWT_SECRET=
+```
+
+오류:
+
+| 상태 코드 | 조건 |
+| --- | --- |
+| `401` | Authorization Bearer 토큰 없음 |
+| `401` | JWT 형식 오류 |
+| `401` | JWT 서명 검증 실패 |
+| `401` | JWT 만료 |
+| `401` | `SUPABASE_JWT_SECRET` 미설정 |
+
+### 11.2 현재 사용자 해석 기준
+
+일반 로그인 사용자의 기준 ID는 Supabase JWT의 `sub`입니다.
+
+```text
+authUserId = JWT sub
+email = JWT email
+memberKey = user_metadata 표시 이름 -> email prefix -> sub
+```
+
+현재 전환 기간에는 기존 대시보드/업무 데이터가 문자열 담당자 이름을 사용하므로, 일부 레거시 API는 `memberKey`를 `currentUserId`로 전달받아 기존 로직과 호환됩니다. 신규 계정 기반 권한과 초대/협업 기능은 `authUserId` 기준으로 확장합니다.
+
+### 11.3 관리자 테스트 인증
+
+프론트의 사용자 전환 테스트를 위해 임시 관리자 인증을 제공합니다. 운영용 인증이 아니며 개발/테스트용입니다.
+
+기본값:
+
+```env
+ADMIN_TEST_ID=Admin
+ADMIN_TEST_PASSWORD=1234
+```
+
+헤더 방식:
+
+```http
+X-Admin-Id: Admin
+X-Admin-Password: 1234
+X-Current-User-Id: member-a
+```
+
+Basic Auth 방식:
+
+```http
+Authorization: Basic Base64(Admin:1234)
+X-Current-User-Id: member-a
+```
+
+관리자 테스트 인증에서는 `X-Current-User-Id`로 선택한 사용자를 `currentUserId`로 사용합니다. 값이 없으면 관리자 ID를 사용합니다.
+
+오류:
+
+| 상태 코드 | 조건 |
+| --- | --- |
+| `401` | 관리자 ID 또는 비밀번호 불일치 |
+| `401` | Basic Auth 형식 오류 |
+
+### 11.4 인증 확인 API
+
+```http
+GET /api/auth/me
+Authorization: Bearer <Supabase Access Token>
+```
+
+응답 `200 OK`
+
+```json
+{
+  "authUserId": "supabase-user-id",
+  "memberKey": "김민재",
+  "email": "minjae@example.com",
+  "authMode": "SUPABASE"
+}
+```
+
+관리자 테스트 인증으로 호출하면 `authMode`는 `ADMIN_TEST`입니다.
+
+### 11.5 관리자 테스트 로그인 확인 API
+
+```http
+POST /api/auth/admin/verify
+Content-Type: application/json
+
+{
+  "adminId": "Admin",
+  "password": "1234"
+}
+```
+
+응답 `200 OK`
+
+```json
+{
+  "admin": true,
+  "adminId": "Admin",
+  "authMode": "ADMIN_TEST"
+}
+```
+
+오류:
+
+| 상태 코드 | 조건 |
+| --- | --- |
+| `401` | 관리자 ID 또는 비밀번호 불일치 |
+
+### 11.6 프로젝트 팀원 조회 API
+
+```http
+GET /api/projects/{projectId}/members
+Authorization: Bearer <Supabase Access Token>
+```
+
+프로젝트 회원만 조회할 수 있습니다. 관리자 테스트 인증은 테스트 목적으로 조회할 수 있습니다.
+
+응답 `200 OK`
+
+```json
+[
+  {
+    "userId": "supabase-user-id-1",
+    "displayName": "김민재",
+    "role": "OWNER",
+    "joinedAt": "2026-08-22T00:00:00"
+  },
+  {
+    "userId": "supabase-user-id-2",
+    "displayName": "이다혜",
+    "role": "MEMBER",
+    "joinedAt": "2026-08-22T00:10:00"
+  }
+]
+```
+
+오류:
+
+| 상태 코드 | 조건 |
+| --- | --- |
+| `401` | 인증되지 않음 |
+| `403` | 프로젝트 회원이 아님 |
+| `404` | 프로젝트 없음 |
+
+### 11.7 프로젝트 생성 시 OWNER 등록
+
+```http
+POST /api/projects
+Authorization: Bearer <Supabase Access Token>
+Content-Type: application/json
+```
+
+프로젝트 생성 성공 시 JWT의 `sub` 사용자가 `project_members`에 `OWNER`로 자동 등록됩니다.
+
+기존 `ProjectRequest.members`는 프론트/회의록/업무 담당자 호환을 위해 유지합니다. 초대/협업이 완성되기 전까지 제거하지 않습니다.
+### 11.8 JWT 적용 보호 API
+
+다음 API는 인증 필터를 통과해야 하며, 컨트롤러에서 프로젝트 회원 또는 OWNER 권한을 확인합니다.
+
+| Method | Endpoint | 권한 기준 |
+| --- | --- | --- |
+| `POST` | `/api/projects` | 로그인 사용자 필요. 생성자는 `project_members`에 `OWNER`로 등록 |
+| `GET` | `/api/projects/{projectId}` | 프로젝트 회원 또는 관리자 테스트 인증 |
+| `DELETE` | `/api/projects/{projectId}` | 프로젝트 `OWNER` 또는 관리자 테스트 인증 |
+| `PATCH` | `/api/projects/{projectId}/restore` | 프로젝트 `OWNER` 또는 관리자 테스트 인증 |
+| `DELETE` | `/api/projects/{projectId}/permanent` | 프로젝트 `OWNER` 또는 관리자 테스트 인증 |
+| `GET` | `/api/projects/{projectId}/members` | 프로젝트 회원 또는 관리자 테스트 인증 |
+| `GET` | `/api/projects/{projectId}/minutes` | 프로젝트 회원 또는 관리자 테스트 인증 |
+| `POST` | `/api/projects/{projectId}/minutes` | 프로젝트 회원 또는 관리자 테스트 인증 |
+| `GET` | `/api/projects/{projectId}/minutes/{minutesId}` | 프로젝트 회원 또는 관리자 테스트 인증. `minutesId`가 해당 프로젝트 소속이어야 함 |
+| `PUT` | `/api/projects/{projectId}/minutes/{minutesId}` | 프로젝트 회원 또는 관리자 테스트 인증. `minutesId`가 해당 프로젝트 소속이어야 함 |
+| `DELETE` | `/api/projects/{projectId}/minutes/{minutesId}` | 프로젝트 회원 또는 관리자 테스트 인증. `minutesId`가 해당 프로젝트 소속이어야 함 |
+| `GET` | `/api/projects/{projectId}/todos` | 프로젝트 회원 또는 관리자 테스트 인증 |
+| `PATCH` | `/api/projects/{projectId}/todos/{todoId}/status` | 프로젝트 회원 또는 관리자 테스트 인증 |
+| `PUT` | `/api/projects/{projectId}/todos/order` | 프로젝트 회원 또는 관리자 테스트 인증 |
+
+전환기 호환 규칙:
+
+- 신규 계정 기반 권한은 `project_members.user_id = JWT sub`를 우선 사용합니다.
+- 기존 프로젝트 중 `project_members` 행이 아직 없는 프로젝트는 `Project.members` 문자열과 로그인 사용자의 `authUserId`, `memberKey`, `email` 중 하나가 일치하면 임시로 프로젝트 회원으로 인정합니다.
+- `project_members` 행이 하나라도 있는 프로젝트는 레거시 `Project.members`만으로 권한을 인정하지 않습니다.
+- 이 호환 규칙은 기존 데이터 마이그레이션이 끝날 때 제거할 수 있습니다.
+### 11.9 대시보드 JWT 권한 기준
+
+이번 단계에서는 Spring Security `SecurityFilterChain` 전환 대신 기존 커스텀 `OncePerRequestFilter` 기반 인증 필터를 유지합니다.
+
+유지 이유:
+
+- 기존 API/CORS/테스트 흐름 변경 범위를 줄입니다.
+- 초대 코드와 프론트 인증 전환이 끝나기 전까지 401/403 동작 변화를 최소화합니다.
+- JWT 직접 검증과 요청 사용자 해석은 커스텀 필터 안에서 처리합니다.
+
+대시보드 API는 다음처럼 사용자 기준을 분리합니다.
+
+| 구분 | 기준 |
+| --- | --- |
+| 프로젝트 접근 권한 | `project_members.user_id = JWT sub` 우선 |
+| 기존 데이터 호환 권한 | `project_members`가 비어 있으면 `Project.members`와 `authUserId`, `memberKey`, `email` 중 하나 일치 |
+| 개인 진행률 조회/수정 | 기존 `todo_member_progress.user_id`와 JWT에서 해석한 `memberKey` 일치 |
+| 관리자 테스트 인증 | `X-Current-User-Id`로 선택한 사용자를 `memberKey`처럼 사용 |
+
+즉, 로그인 사용자의 실제 계정 권한은 `JWT sub`로 확인하고, 기존 Todo 진행률 데이터는 아직 문자열 담당자 이름 기반이므로 `memberKey`로 조회합니다.
+
+보호되는 대시보드 API:
+
+| Method | Endpoint | 처리 기준 |
+| --- | --- | --- |
+| `GET` | `/api/dashboard/projects` | JWT 사용자 또는 관리자 테스트 인증 기준 프로젝트 접근 확인 |
+| `GET` | `/api/dashboard/projects/my` | JWT 사용자 또는 관리자 테스트 인증 기준 프로젝트 접근 확인 |
+| `GET` | `/api/projects/{projectId}/dashboard` | 프로젝트 회원 또는 관리자 테스트 인증 |
+| `GET` | `/api/projects/{projectId}/dashboard/my` | 프로젝트 회원 또는 관리자 테스트 인증 |
+| `GET` | `/api/projects/{projectId}/dashboard/team` | 프로젝트 회원 또는 관리자 테스트 인증 |
+| `PATCH` | `/api/todo-assignments/{assignmentId}` | 프로젝트 회원 확인 후 본인 담당 진행률만 수정 |
+| `PATCH` | `/api/todos/{todoId}/progress` | 프로젝트 회원 확인 후 본인 담당 진행률만 수정 |
+
+팀 대시보드의 `members` 초기화 기준:
+
+- `project_members`가 있으면 `project_members.display_name`을 우선 사용합니다.
+- `project_members`가 없으면 기존 `Project.members`를 사용합니다.
+- 실제 진행률 행이 있는 사용자는 초기 목록에 없어도 응답에 포함됩니다.
+### 11.10 프로젝트 목록 JWT 전환
+
+`GET /api/projects`와 `GET /api/projects/trash`는 이제 인증 필수 API입니다.
+
+```http
+GET /api/projects
+Authorization: Bearer <Supabase Access Token>
+```
+
+```http
+GET /api/projects/trash
+Authorization: Bearer <Supabase Access Token>
+```
+
+처리 기준:
+
+- 일반 사용자는 접근 가능한 프로젝트만 반환합니다.
+- 접근 가능 여부는 `project_members.user_id = JWT sub`를 우선 사용합니다.
+- `project_members`가 아직 없는 기존 프로젝트는 전환기 호환 규칙에 따라 `Project.members`와 로그인 사용자의 `authUserId`, `memberKey`, `email` 중 하나가 일치하면 반환합니다.
+- 관리자 테스트 인증은 모든 프로젝트 목록을 볼 수 있습니다.
+- `GET /api/projects`는 `DELETED` 프로젝트를 제외합니다.
+- `GET /api/projects/trash`는 `DELETED` 프로젝트만 반환합니다.
+
+오류:
+
+| 상태 코드 | 조건 |
+| --- | --- |
+| `401` | 인증 헤더 없음 또는 JWT 검증 실패 |

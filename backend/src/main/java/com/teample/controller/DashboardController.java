@@ -7,6 +7,8 @@ import com.teample.dto.dashboard.TeamProjectDashboardResponse;
 import com.teample.dto.dashboard.TodoAssignmentResponse;
 import com.teample.dto.dashboard.TodoProgressUpdateRequest;
 import com.teample.exception.TodoAccessDeniedException;
+import com.teample.security.AuthenticatedUser;
+import com.teample.security.SupabaseAuthenticationFilter;
 import com.teample.service.DashboardService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -21,8 +23,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.net.URLDecoder;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 @RestController
@@ -30,29 +30,23 @@ import java.util.List;
 @RequestMapping("/api")
 public class DashboardController {
 
-    private static final String CURRENT_USER_ID_ATTRIBUTE = "currentUserId";
-    private static final String CURRENT_USER_ID_HEADER = "X-Current-User-Id";
-
     private final DashboardService dashboardService;
 
     @GetMapping("/dashboard/projects")
     public ResponseEntity<List<DashboardProjectResponse>> getProjectDashboards(HttpServletRequest request) {
-        String currentUserId = currentUserId(request);
-        return ResponseEntity.ok(dashboardService.findLegacyProjectDashboards(currentUserId));
+        return ResponseEntity.ok(dashboardService.findLegacyProjectDashboards(authenticatedUser(request), isAdmin(request)));
     }
 
     @GetMapping("/dashboard/projects/my")
     public ResponseEntity<List<MyProjectDashboardResponse>> getMyProjectDashboards(HttpServletRequest request) {
-        String currentUserId = currentUserId(request);
-        return ResponseEntity.ok(dashboardService.findMyProjectDashboards(currentUserId));
+        return ResponseEntity.ok(dashboardService.findMyProjectDashboards(authenticatedUser(request), isAdmin(request)));
     }
 
     @GetMapping("/projects/{projectId}/dashboard")
     public ResponseEntity<ProjectDashboardResponse> getProjectDashboard(
             @PathVariable String projectId,
             HttpServletRequest request) {
-        String currentUserId = currentUserId(request);
-        return dashboardService.findLegacyProjectDashboard(projectId, currentUserId)
+        return dashboardService.findLegacyProjectDashboard(projectId, authenticatedUser(request), isAdmin(request))
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
@@ -61,8 +55,7 @@ public class DashboardController {
     public ResponseEntity<MyProjectDashboardResponse> getMyProjectDashboard(
             @PathVariable String projectId,
             HttpServletRequest request) {
-        String currentUserId = currentUserId(request);
-        return dashboardService.findMyProjectDashboard(projectId, currentUserId)
+        return dashboardService.findMyProjectDashboard(projectId, authenticatedUser(request), isAdmin(request))
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
@@ -71,8 +64,7 @@ public class DashboardController {
     public ResponseEntity<TeamProjectDashboardResponse> getTeamProjectDashboard(
             @PathVariable String projectId,
             HttpServletRequest request) {
-        currentUserId(request);
-        return dashboardService.findTeamProjectDashboard(projectId, currentUserId(request))
+        return dashboardService.findTeamProjectDashboard(projectId, authenticatedUser(request), isAdmin(request))
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
@@ -82,9 +74,9 @@ public class DashboardController {
             @PathVariable String assignmentId,
             @RequestBody TodoProgressUpdateRequest request,
             HttpServletRequest servletRequest) {
-        String currentUserId = currentUserId(servletRequest);
         try {
-            return dashboardService.updateProgressByAssignmentId(assignmentId, currentUserId, request)
+            return dashboardService.updateProgressByAssignmentId(
+                            assignmentId, authenticatedUser(servletRequest), isAdmin(servletRequest), request)
                     .map(ResponseEntity::ok)
                     .orElse(ResponseEntity.notFound().build());
         } catch (TodoAccessDeniedException e) {
@@ -99,11 +91,13 @@ public class DashboardController {
             @PathVariable String todoId,
             @RequestBody TodoProgressUpdateRequest request,
             HttpServletRequest servletRequest) {
-        String currentUserId = currentUserId(servletRequest);
         try {
-            return dashboardService.updateProgressByTodoAndUser(todoId, currentUserId, request)
+            return dashboardService.updateProgressByTodoAndUser(
+                            todoId, authenticatedUser(servletRequest), isAdmin(servletRequest), request)
                     .map(ResponseEntity::ok)
                     .orElse(ResponseEntity.notFound().build());
+        } catch (TodoAccessDeniedException e) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, e.getMessage());
         } catch (IllegalArgumentException e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
         }
@@ -114,12 +108,15 @@ public class DashboardController {
         return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
     }
 
-    private String currentUserId(HttpServletRequest request) {
-        Object value = request.getAttribute(CURRENT_USER_ID_ATTRIBUTE);
-        String currentUserId = value != null ? value.toString() : request.getHeader(CURRENT_USER_ID_HEADER);
-        if (currentUserId == null || currentUserId.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Current user is not resolved.");
+    private AuthenticatedUser authenticatedUser(HttpServletRequest request) {
+        Object value = request.getAttribute(SupabaseAuthenticationFilter.AUTHENTICATED_USER_ATTRIBUTE);
+        if (value instanceof AuthenticatedUser user) {
+            return user;
         }
-        return URLDecoder.decode(currentUserId.trim(), StandardCharsets.UTF_8);
+        throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Current user is not resolved.");
+    }
+
+    private boolean isAdmin(HttpServletRequest request) {
+        return Boolean.TRUE.equals(request.getAttribute(SupabaseAuthenticationFilter.ADMIN_TEST_USER_ATTRIBUTE));
     }
 }

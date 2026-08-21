@@ -6,7 +6,9 @@ import com.teample.entity.Project;
 import com.teample.entity.ProjectStatus;
 import com.teample.repository.IntegratedTodoRepository;
 import com.teample.repository.MinutesRepository;
+import com.teample.repository.ProjectMemberRepository;
 import com.teample.repository.ProjectRepository;
+import com.teample.security.AuthenticatedUser;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,8 +26,15 @@ public class ProjectService {
     private final IntegratedTodoRepository integratedTodoRepository;
     private final MinutesRepository minutesRepository;
     private final TodoProgressSyncService todoProgressSyncService;
+    private final ProjectMemberService projectMemberService;
+    private final ProjectMemberRepository projectMemberRepository;
 
     public ProjectResponse create(ProjectRequest request) {
+        return create(request, null);
+    }
+
+    @Transactional
+    public ProjectResponse create(ProjectRequest request, AuthenticatedUser owner) {
         Project project = Project.builder()
                 .name(request.getName())
                 .members(request.getMembers())
@@ -33,6 +42,7 @@ public class ProjectService {
                 .build();
         synchronizeStatus(project);
         Project saved = projectRepository.save(project);
+        projectMemberService.addOwner(saved, owner);
         return ProjectResponse.from(saved);
     }
 
@@ -46,8 +56,26 @@ public class ProjectService {
     }
 
     @Transactional
+    public List<ProjectResponse> findAll(AuthenticatedUser user, boolean admin) {
+        return projectRepository.findAll().stream()
+                .peek(this::synchronizeStatus)
+                .filter(Project::isVisibleInActiveList)
+                .filter(project -> projectMemberService.canAccessProject(project, user, admin))
+                .map(ProjectResponse::from)
+                .toList();
+    }
+
+    @Transactional
     public List<ProjectResponse> findTrash() {
         return projectRepository.findByStatus(ProjectStatus.DELETED).stream()
+                .map(ProjectResponse::from)
+                .toList();
+    }
+
+    @Transactional
+    public List<ProjectResponse> findTrash(AuthenticatedUser user, boolean admin) {
+        return projectRepository.findByStatus(ProjectStatus.DELETED).stream()
+                .filter(project -> projectMemberService.canAccessProject(project, user, admin))
                 .map(ProjectResponse::from)
                 .toList();
     }
@@ -92,6 +120,7 @@ public class ProjectService {
     @Transactional
     public boolean permanentlyDelete(String id) {
         return projectRepository.findById(id).map(project -> {
+            projectMemberRepository.deleteByProjectId(project.getId());
             todoProgressSyncService.deleteByProject(project);
             integratedTodoRepository.deleteByProjectId(project.getId());
             minutesRepository.deleteByProjectId(project.getId());

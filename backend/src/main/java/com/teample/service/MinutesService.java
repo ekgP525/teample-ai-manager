@@ -85,9 +85,25 @@ public class MinutesService {
         return minutesRepository.findById(id).map(this::toResponse);
     }
 
+    public Optional<MinutesResponse> findByProjectIdAndId(String projectId, String id) {
+        return minutesRepository.findById(id)
+                .filter(minutes -> belongsToProject(minutes, projectId))
+                .map(this::toResponse);
+    }
+
+    @Transactional
+    public Optional<MinutesResponse> update(String projectId, String id, MinutesResponse request) {
+        return minutesRepository.findById(id)
+                .filter(minutes -> belongsToProject(minutes, projectId))
+                .map(minutes -> updateMinutes(minutes, request));
+    }
+
     @Transactional
     public Optional<MinutesResponse> update(String id, MinutesResponse request) {
-        return minutesRepository.findById(id).map(minutes -> {
+        return minutesRepository.findById(id).map(minutes -> updateMinutes(minutes, request));
+    }
+
+    private MinutesResponse updateMinutes(Minutes minutes, MinutesResponse request) {
             minutes.setTitle(request.getTitle());
             minutes.setTopic(request.getTopic());
             minutes.setDiscussions(new ArrayList<>(safeList(request.getDiscussions())));
@@ -101,16 +117,34 @@ public class MinutesService {
             projectTodoService.synchronizeFromMinutes(saved);
             todoProgressSyncService.syncMinutes(saved.getProject(), saved);
             return toResponse(saved);
-        });
+    }
+
+    @Transactional
+    public boolean delete(String projectId, String id) {
+        return minutesRepository.findById(id)
+                .filter(minutes -> belongsToProject(minutes, projectId))
+                .map(this::deleteMinutes)
+                .orElse(false);
     }
 
     @Transactional
     public boolean delete(String id) {
-        return minutesRepository.findById(id).map(minutes -> {
-            todoProgressSyncService.deleteByMinutes(minutes);
-            minutesRepository.delete(minutes);
-            return true;
-        }).orElse(false);
+        return minutesRepository.findById(id)
+                .map(this::deleteMinutes)
+                .orElse(false);
+    }
+
+    private boolean deleteMinutes(Minutes minutes) {
+        todoProgressSyncService.deleteByMinutes(minutes);
+        minutesRepository.delete(minutes);
+        return true;
+    }
+
+    private boolean belongsToProject(Minutes minutes, String projectId) {
+        return minutes != null
+                && minutes.getProject() != null
+                && minutes.getProject().getId() != null
+                && minutes.getProject().getId().equals(projectId);
     }
 
     private MinutesResponse toResponse(Minutes minutes) {
