@@ -10,9 +10,11 @@ import com.teample.entity.ProjectTodo;
 import com.teample.entity.TodoMemberProgress;
 import com.teample.exception.TodoAccessDeniedException;
 import com.teample.repository.IntegratedTodoRepository;
+import com.teample.repository.ProjectMemberRepository;
 import com.teample.repository.ProjectRepository;
 import com.teample.repository.ProjectTodoRepository;
 import com.teample.repository.TodoMemberProgressRepository;
+import com.teample.security.AuthenticatedUser;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -37,6 +39,9 @@ class DashboardServiceTest {
     private ProjectRepository projectRepository;
 
     @Mock
+    private ProjectMemberRepository projectMemberRepository;
+
+    @Mock
     private IntegratedTodoRepository integratedTodoRepository;
 
     @Mock
@@ -47,6 +52,9 @@ class DashboardServiceTest {
 
     @Mock
     private TodoProgressSyncService todoProgressSyncService;
+
+    @Mock
+    private ProjectMemberService projectMemberService;
 
     private DashboardService dashboardService;
     private Project project;
@@ -59,10 +67,12 @@ class DashboardServiceTest {
     void setUp() {
         dashboardService = new DashboardService(
                 projectRepository,
+                projectMemberRepository,
                 integratedTodoRepository,
                 projectTodoRepository,
                 todoMemberProgressRepository,
-                todoProgressSyncService
+                todoProgressSyncService,
+                projectMemberService
         );
 
         project = Project.builder()
@@ -243,6 +253,20 @@ class DashboardServiceTest {
                 .isInstanceOf(TodoAccessDeniedException.class);
         assertThatThrownBy(() -> dashboardService.findTeamProjectDashboard("project-1", "mallory"))
                 .isInstanceOf(TodoAccessDeniedException.class);
+    }
+    @Test
+    void jwtDashboardUsesProjectMemberAccessAndLegacyProgressKey() {
+        AuthenticatedUser user = new AuthenticatedUser("supabase-user-id", "alice", "alice@example.com");
+        when(projectRepository.findById("project-1")).thenReturn(Optional.of(project));
+        when(todoMemberProgressRepository.findByProjectIdAndUserIdAndAssignedTrue("project-1", "alice"))
+                .thenReturn(List.of(aliceProgress));
+
+        MyProjectDashboardResponse dashboard = dashboardService.findMyProjectDashboard("project-1", user, false)
+                .orElseThrow();
+
+        verify(projectMemberService).ensureProjectMember(project, user, false);
+        assertThat(dashboard.getUserId()).isEqualTo("alice");
+        assertThat(dashboard.getTodos()).hasSize(1);
     }
     private TodoMemberProgress progress(String id, String userId, boolean completed, ProjectTodo todo) {
         TodoMemberProgress progress = TodoMemberProgress.builder()
