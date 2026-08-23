@@ -9,8 +9,8 @@ import java.security.MessageDigest;
 @Service
 public class AdminTestAuthService {
 
-    @Value("${admin.test-id:${ADMIN_TEST_ID:Admin}}")
-    private String adminId = "Admin";
+    @Value("${admin.test-id:${ADMIN_TEST_ID:admin}}")
+    private String adminId = "admin";
 
     @Value("${admin.test-password:${ADMIN_TEST_PASSWORD:1234}}")
     private String adminPassword = "1234";

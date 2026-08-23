@@ -167,7 +167,7 @@ class ProjectServiceTest {
 
     @Test
     void findAllWithAdminReturnsEveryVisibleProject() {
-        AuthenticatedUser admin = new AuthenticatedUser("admin-test:Admin", "Admin", null);
+        AuthenticatedUser admin = new AuthenticatedUser("admin-test:admin", "admin", null);
         Project first = Project.builder().id("project-1").name("first").build();
         Project second = Project.builder().id("project-2").name("second").build();
         when(projectRepository.findAll()).thenReturn(List.of(first, second));

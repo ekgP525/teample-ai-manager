@@ -3,8 +3,16 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, type FormEvent, useEffect, useState } from "react";
+import {
+  clearAdminTestSession,
+  hasAdminTestSession,
+  setAdminTestSession,
+} from "@/lib/admin-test-auth";
 import { signInWithOAuth as signInWithSocialOAuth } from "@/lib/sign-in-with-oauth";
 import { supabase } from "@/lib/supabase";
+
+const ADMIN_TEST_ID = "admin";
+const apiUrl = process.env.NEXT_PUBLIC_API_URL;
 
 function LoginForm() {
   const router = useRouter();
@@ -20,11 +28,13 @@ function LoginForm() {
   const redirectMessage =
     reason === "session-expired"
       ? "로그인이 만료되었습니다. 다시 로그인해 주세요."
-      : reason === "login-required"
-        ? "로그인이 필요한 페이지입니다."
-        : searchParams.get("error")
-          ? "로그인에 실패했습니다. 다시 시도해 주세요."
-          : null;
+      : reason === "admin-session-expired"
+        ? "관리자 테스트 인증이 만료되었습니다. 다시 로그인해 주세요."
+        : reason === "login-required"
+          ? "로그인이 필요한 페이지입니다."
+          : searchParams.get("error")
+            ? "로그인에 실패했습니다. 다시 시도해 주세요."
+            : null;
 
   useEffect(() => {
     let isMounted = true;
@@ -38,7 +48,11 @@ function LoginForm() {
 
         if (sessionError) throw sessionError;
 
-        if (session && isMounted && reason !== "session-expired") {
+        const hasExistingSession = session || hasAdminTestSession();
+        const shouldStayOnLogin =
+          reason === "session-expired" || reason === "admin-session-expired";
+
+        if (hasExistingSession && isMounted && !shouldStayOnLogin) {
           router.replace(next);
           router.refresh();
         }
@@ -62,8 +76,46 @@ function LoginForm() {
     setIsLoading(true);
 
     try {
+      const loginId = email.trim();
+      const normalizedEmail = loginId.toLowerCase();
+      const isAdminTestLogin = normalizedEmail === ADMIN_TEST_ID;
+
+      if (isAdminTestLogin) {
+        if (!apiUrl) {
+          setError("백엔드 API 주소가 설정되지 않았습니다.");
+          return;
+        }
+
+        const response = await fetch(`${apiUrl}/api/auth/admin/verify`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: ADMIN_TEST_ID, password }),
+        });
+
+        if (!response.ok) {
+          setError("관리자 계정 또는 비밀번호를 확인해 주세요.");
+          return;
+        }
+
+        await supabase.auth.signOut({ scope: "local" });
+        setAdminTestSession(ADMIN_TEST_ID, password);
+        router.replace(next);
+        router.refresh();
+        return;
+      }
+
+      if (!normalizedEmail.includes("@")) {
+        setError("이메일 형식을 확인해 주세요.");
+        return;
+      }
+      if (password.length < 6) {
+        setError("비밀번호는 6자 이상 입력해 주세요.");
+        return;
+      }
+
+      clearAdminTestSession();
       const { error: signInError } = await supabase.auth.signInWithPassword({
-        email,
+        email: normalizedEmail,
         password,
       });
 
@@ -86,6 +138,7 @@ function LoginForm() {
     setIsLoading(true);
 
     try {
+      clearAdminTestSession();
       const { error: signInError } = await signInWithSocialOAuth(provider, next);
 
       if (signInError) {
@@ -102,10 +155,16 @@ function LoginForm() {
     <main className="flex flex-1 flex-col items-center justify-center px-4">
       <div className="w-full max-w-sm">
         <h1 className="text-2xl font-bold mb-6 text-center">로그인</h1>
-        <form onSubmit={signInWithEmail} className="flex flex-col gap-4">
+        <form
+          onSubmit={signInWithEmail}
+          noValidate
+          className="flex flex-col gap-4"
+        >
           <input
-            type="email"
-            placeholder="이메일"
+            type="text"
+            inputMode="email"
+            autoComplete="username"
+            placeholder="이메일 또는 관리자 ID"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
             required

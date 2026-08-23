@@ -618,23 +618,28 @@ GET, POST, PUT, PATCH, DELETE, OPTIONS
 Authorization: Bearer <Supabase Access Token>
 ```
 
-백엔드는 Supabase API를 매 요청마다 호출하지 않고, 백엔드 전용 환경 변수 `SUPABASE_JWT_SECRET`으로 JWT를 직접 검증합니다.
+백엔드는 Supabase API를 매 요청마다 호출하지 않고, Supabase JWKS 공개키 엔드포인트로 받은 공개키를 캐시해 JWT를 직접 검증합니다.
+현재 Supabase 프로젝트는 새 JWT Signing Keys를 사용하므로 `SUPABASE_JWT_SECRET` 기반 Legacy HS256 검증을 사용하지 않습니다.
 
 검증 기준:
 
-- JWT header `alg`는 `HS256`이어야 합니다.
-- JWT signature를 `SUPABASE_JWT_SECRET` 기반 HMAC SHA-256으로 검증합니다.
+- JWT header `alg`는 `ES256`이어야 합니다.
+- JWT header `kid`는 필수이며, JWKS의 공개키 `kid`와 매칭되어야 합니다.
+- JWKS endpoint: `https://<project-ref>.supabase.co/auth/v1/.well-known/jwks.json`
+- JWT signature를 JWKS의 P-256 공개키로 검증합니다.
 - JWT payload의 `exp` 만료 시간을 검증합니다.
+- `SUPABASE_JWT_ISSUER`가 설정되어 있으면 JWT payload의 `iss`와 일치해야 합니다.
 - JWT payload의 `sub`를 실제 로그인 사용자 ID로 사용합니다.
 - JWT payload의 `email`을 사용자 이메일로 사용합니다.
 - JWT payload의 `user_metadata.name`, `user_metadata.full_name`, `user_metadata.display_name` 중 첫 번째 값을 표시 이름 후보로 사용합니다.
-- 표시 이름 후보가 없으면 email prefix를 사용하고, email도 없으면 `sub`를 사용합니다.
-- JWT 원문은 로그에 출력하지 않습니다.
+- 표시 이름 후보가 없으면 email prefix를 사용하고, email이 없으면 `sub`를 사용합니다.
+- JWT 원문과 초대/관리자 인증 값은 로그에 출력하지 않습니다.
 
 백엔드 `.env` 필요 값:
 
 ```env
-SUPABASE_JWT_SECRET=
+SUPABASE_JWKS_URI=https://<project-ref>.supabase.co/auth/v1/.well-known/jwks.json
+SUPABASE_JWT_ISSUER=https://<project-ref>.supabase.co/auth/v1
 ```
 
 오류:
@@ -643,10 +648,12 @@ SUPABASE_JWT_SECRET=
 | --- | --- |
 | `401` | Authorization Bearer 토큰 없음 |
 | `401` | JWT 형식 오류 |
+| `401` | JWT header `alg`가 `ES256`이 아님 |
+| `401` | JWT header `kid` 누락 또는 JWKS에서 매칭되는 공개키 없음 |
 | `401` | JWT 서명 검증 실패 |
 | `401` | JWT 만료 |
-| `401` | `SUPABASE_JWT_SECRET` 미설정 |
-
+| `401` | JWT issuer 불일치 |
+| `401` | `SUPABASE_JWKS_URI` 미설정 |
 ### 11.2 현재 사용자 해석 기준
 
 일반 로그인 사용자의 기준 ID는 Supabase JWT의 `sub`입니다.
@@ -666,14 +673,14 @@ memberKey = user_metadata 표시 이름 -> email prefix -> sub
 기본값:
 
 ```env
-ADMIN_TEST_ID=Admin
+ADMIN_TEST_ID=admin
 ADMIN_TEST_PASSWORD=1234
 ```
 
 헤더 방식:
 
 ```http
-X-Admin-Id: Admin
+X-Admin-Id: admin
 X-Admin-Password: 1234
 X-Current-User-Id: member-a
 ```
@@ -681,7 +688,7 @@ X-Current-User-Id: member-a
 Basic Auth 방식:
 
 ```http
-Authorization: Basic Base64(Admin:1234)
+Authorization: Basic Base64(admin:1234)
 X-Current-User-Id: member-a
 ```
 
@@ -721,7 +728,7 @@ POST /api/auth/admin/verify
 Content-Type: application/json
 
 {
-  "adminId": "Admin",
+  "adminId": "admin",
   "password": "1234"
 }
 ```
@@ -731,7 +738,7 @@ Content-Type: application/json
 ```json
 {
   "admin": true,
-  "adminId": "Admin",
+  "adminId": "admin",
   "authMode": "ADMIN_TEST"
 }
 ```

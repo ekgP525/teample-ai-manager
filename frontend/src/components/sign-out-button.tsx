@@ -1,5 +1,6 @@
 "use client";
 
+import { clearAdminTestSession } from "@/lib/admin-test-auth";
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 
@@ -7,6 +8,7 @@ export function SignOutButton({ className = "" }: { className?: string }) {
   const router = useRouter();
 
   async function signOut() {
+    clearAdminTestSession();
     await supabase.auth.signOut();
     router.replace("/login");
     router.refresh();

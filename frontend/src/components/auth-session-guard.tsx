@@ -1,5 +1,6 @@
 "use client";
 
+import { hasAdminTestSession } from "@/lib/admin-test-auth";
 import { supabase } from "@/lib/supabase";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -15,6 +16,11 @@ export function AuthSessionGuard({ children }: { children: React.ReactNode }) {
 
     async function checkSession() {
       try {
+        if (hasAdminTestSession()) {
+          if (isMounted) setIsChecking(false);
+          return;
+        }
+
         const { data, error } = await supabase.auth.getSession();
         if (error) throw error;
         if (!data.session) {

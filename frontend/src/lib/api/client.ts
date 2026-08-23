@@ -1,3 +1,7 @@
+import {
+  clearAdminTestSession,
+  getAdminTestSession,
+} from "@/lib/admin-test-auth";
 import { supabase } from "@/lib/supabase";
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL;
@@ -13,6 +17,17 @@ export class ApiError extends Error {
 type ApiRequestOptions = RequestInit & {
   errorMessage: string;
 };
+
+type RequestAuth =
+  | {
+      mode: "ADMIN_TEST";
+      adminId: string;
+      password: string;
+    }
+  | {
+      mode: "SUPABASE";
+      accessToken: string;
+    };
 
 async function getErrorMessage(response: Response, fallback: string) {
   try {
@@ -31,8 +46,8 @@ export async function apiRequest<T>(
     throw new ApiError("백엔드 API 주소가 설정되지 않았습니다.", 0);
   }
 
-  const accessToken = await getAccessToken();
-  return sendRequest<T>(path, errorMessage, headers, options, accessToken, true);
+  const auth = await resolveRequestAuth();
+  return sendRequest<T>(path, errorMessage, headers, options, auth, true);
 }
 
 async function sendRequest<T>(
@@ -40,11 +55,11 @@ async function sendRequest<T>(
   errorMessage: string,
   headers: HeadersInit | undefined,
   options: Omit<RequestInit, "headers">,
-  accessToken: string,
+  auth: RequestAuth,
   allowTokenRefresh: boolean
 ): Promise<T> {
   const requestHeaders = new Headers(headers);
-  requestHeaders.set("Authorization", `Bearer ${accessToken}`);
+  applyAuthHeaders(requestHeaders, auth);
 
   if (options.body && !requestHeaders.has("Content-Type")) {
     requestHeaders.set("Content-Type", "application/json");
@@ -55,7 +70,12 @@ async function sendRequest<T>(
     headers: requestHeaders,
   });
 
-  if (response.status === 401 && allowTokenRefresh && !options.signal?.aborted) {
+  if (
+    response.status === 401 &&
+    auth.mode === "SUPABASE" &&
+    allowTokenRefresh &&
+    !options.signal?.aborted
+  ) {
     const refreshedToken = await refreshAccessToken();
     if (refreshedToken) {
       return sendRequest<T>(
@@ -63,7 +83,7 @@ async function sendRequest<T>(
         errorMessage,
         headers,
         options,
-        refreshedToken,
+        { mode: "SUPABASE", accessToken: refreshedToken },
         false
       );
     }
@@ -71,8 +91,20 @@ async function sendRequest<T>(
 
   if (!response.ok) {
     if (response.status === 401) {
-      void redirectToLogin(true);
-      throw new ApiError("로그인이 만료되었습니다. 다시 로그인해 주세요.", 401);
+      if (auth.mode === "ADMIN_TEST") {
+        clearAdminTestSession();
+        void redirectToLogin("admin-session-expired", false);
+        throw new ApiError(
+          "관리자 테스트 인증이 만료되었습니다. 다시 로그인해 주세요.",
+          401
+        );
+      }
+
+      void redirectToLogin("session-expired", true);
+      throw new ApiError(
+        "로그인이 만료되었습니다. 다시 로그인해 주세요.",
+        401
+      );
     }
 
     if (response.status === 403) {
@@ -99,11 +131,37 @@ async function sendRequest<T>(
   }
 }
 
+async function resolveRequestAuth(): Promise<RequestAuth> {
+  const adminSession = getAdminTestSession();
+  if (adminSession) {
+    return {
+      mode: "ADMIN_TEST",
+      adminId: adminSession.adminId,
+      password: adminSession.password,
+    };
+  }
+
+  return { mode: "SUPABASE", accessToken: await getAccessToken() };
+}
+
+function applyAuthHeaders(headers: Headers, auth: RequestAuth) {
+  if (auth.mode === "ADMIN_TEST") {
+    headers.delete("Authorization");
+    headers.set("X-Admin-Id", auth.adminId);
+    headers.set("X-Admin-Password", auth.password);
+    return;
+  }
+
+  headers.delete("X-Admin-Id");
+  headers.delete("X-Admin-Password");
+  headers.set("Authorization", `Bearer ${auth.accessToken}`);
+}
+
 async function getAccessToken() {
   const { data, error } = await supabase.auth.getSession();
 
   if (error || !data.session?.access_token) {
-    void redirectToLogin(false);
+    void redirectToLogin("login-required", false);
     throw new ApiError("로그인 후 이용해 주세요.", 401);
   }
 
@@ -120,7 +178,10 @@ async function refreshAccessToken() {
   }
 }
 
-async function redirectToLogin(clearLocalSession: boolean) {
+async function redirectToLogin(
+  reason: "login-required" | "session-expired" | "admin-session-expired",
+  clearLocalSession: boolean
+) {
   if (typeof window === "undefined" || isRedirectingToLogin) return;
 
   isRedirectingToLogin = true;
@@ -136,7 +197,7 @@ async function redirectToLogin(clearLocalSession: boolean) {
 
   const query = new URLSearchParams({
     next,
-    reason: clearLocalSession ? "session-expired" : "login-required",
+    reason,
   });
   window.location.replace(`/login?${query.toString()}`);
 }
