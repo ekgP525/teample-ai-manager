@@ -16,10 +16,16 @@ export function AuthSessionGuard({ children }: { children: React.ReactNode }) {
 
     async function checkSession() {
       try {
+        if (hasAdminTestSession()) {
+          if (isMounted) setIsChecking(false);
+          return;
+        }
+
         const { data, error } = await supabase.auth.getSession();
         if (error) throw error;
-        if (!data.session && !hasAdminTestSession()) {
-          router.replace(`/login?next=${encodeURIComponent(pathname)}`);
+        if (!data.session) {
+          const currentPath = `${window.location.pathname}${window.location.search}`;
+          router.replace(`/login?next=${encodeURIComponent(currentPath)}`);
           return;
         }
         if (isMounted) setIsChecking(false);

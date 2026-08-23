@@ -3,7 +3,11 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, type FormEvent, useEffect, useState } from "react";
-import { clearAdminTestSession, hasAdminTestSession, setAdminTestSession } from "@/lib/admin-test-auth";
+import {
+  clearAdminTestSession,
+  hasAdminTestSession,
+  setAdminTestSession,
+} from "@/lib/admin-test-auth";
 import { signInWithOAuth as signInWithSocialOAuth } from "@/lib/sign-in-with-oauth";
 import { supabase } from "@/lib/supabase";
 
@@ -20,6 +24,17 @@ function LoginForm() {
   const next = searchParams.get("next")?.startsWith("/")
     ? searchParams.get("next")!
     : "/projects";
+  const reason = searchParams.get("reason");
+  const redirectMessage =
+    reason === "session-expired"
+      ? "로그인이 만료되었습니다. 다시 로그인해 주세요."
+      : reason === "admin-session-expired"
+        ? "관리자 테스트 인증이 만료되었습니다. 다시 로그인해 주세요."
+        : reason === "login-required"
+          ? "로그인이 필요한 페이지입니다."
+          : searchParams.get("error")
+            ? "로그인에 실패했습니다. 다시 시도해 주세요."
+            : null;
 
   useEffect(() => {
     let isMounted = true;
@@ -33,7 +48,11 @@ function LoginForm() {
 
         if (sessionError) throw sessionError;
 
-        if ((session || hasAdminTestSession()) && isMounted) {
+        const hasExistingSession = session || hasAdminTestSession();
+        const shouldStayOnLogin =
+          reason === "session-expired" || reason === "admin-session-expired";
+
+        if (hasExistingSession && isMounted && !shouldStayOnLogin) {
           router.replace(next);
           router.refresh();
         }
@@ -49,7 +68,7 @@ function LoginForm() {
     return () => {
       isMounted = false;
     };
-  }, [next, router]);
+  }, [next, reason, router]);
 
   async function signInWithEmail(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -59,18 +78,18 @@ function LoginForm() {
     try {
       const loginId = email.trim();
       const normalizedEmail = loginId.toLowerCase();
-      const isAdminTestLogin = loginId === ADMIN_TEST_ID;
+      const isAdminTestLogin = normalizedEmail === ADMIN_TEST_ID;
 
       if (isAdminTestLogin) {
         if (!apiUrl) {
-          setError("Backend API URL is not configured.");
+          setError("백엔드 API 주소가 설정되지 않았습니다.");
           return;
         }
 
         const response = await fetch(`${apiUrl}/api/auth/admin/verify`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: loginId, password }),
+          body: JSON.stringify({ id: ADMIN_TEST_ID, password }),
         });
 
         if (!response.ok) {
@@ -78,7 +97,8 @@ function LoginForm() {
           return;
         }
 
-        setAdminTestSession(loginId, password);
+        await supabase.auth.signOut({ scope: "local" });
+        setAdminTestSession(ADMIN_TEST_ID, password);
         router.replace(next);
         router.refresh();
         return;
@@ -112,11 +132,13 @@ function LoginForm() {
       setIsLoading(false);
     }
   }
+
   async function signInWithOAuth(provider: "google" | "kakao") {
     setError(null);
     setIsLoading(true);
 
     try {
+      clearAdminTestSession();
       const { error: signInError } = await signInWithSocialOAuth(provider, next);
 
       if (signInError) {
@@ -133,10 +155,16 @@ function LoginForm() {
     <main className="flex flex-1 flex-col items-center justify-center px-4">
       <div className="w-full max-w-sm">
         <h1 className="text-2xl font-bold mb-6 text-center">로그인</h1>
-        <form onSubmit={signInWithEmail} noValidate className="flex flex-col gap-4">
+        <form
+          onSubmit={signInWithEmail}
+          noValidate
+          className="flex flex-col gap-4"
+        >
           <input
-            type="email"
-            placeholder="이메일"
+            type="text"
+            inputMode="email"
+            autoComplete="username"
+            placeholder="이메일 또는 관리자 ID"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
             required
@@ -187,9 +215,9 @@ function LoginForm() {
           <span aria-hidden="true">💬</span>
           카카오로 로그인
         </button>
-        {(error || searchParams.get("error")) && (
+        {(error || redirectMessage) && (
           <p role="alert" className="mt-4 text-center text-sm text-red-600">
-            {error ?? "로그인에 실패했습니다. 다시 시도해 주세요."}
+            {error ?? redirectMessage}
           </p>
         )}
         <p className="mt-4 text-center text-sm text-zinc-500">

@@ -7,6 +7,13 @@ export interface CreateProjectInput {
   endDate?: string;
 }
 
+export interface ProjectMember {
+  userId: string;
+  displayName: string;
+  role: "OWNER" | "MEMBER";
+  joinedAt: string;
+}
+
 export function getProjects(signal?: AbortSignal) {
   return apiRequest<Project[]>("/api/projects", {
     errorMessage: "프로젝트를 불러오지 못했습니다.",
@@ -26,6 +33,16 @@ export function getProject(projectId: string, signal?: AbortSignal) {
     errorMessage: "프로젝트를 불러오지 못했습니다.",
     signal,
   });
+}
+
+export function getProjectMembers(projectId: string, signal?: AbortSignal) {
+  return apiRequest<ProjectMember[]>(
+    `/api/projects/${encodeURIComponent(projectId)}/members`,
+    {
+      errorMessage: "프로젝트 팀원을 불러오지 못했습니다.",
+      signal,
+    }
+  );
 }
 
 export function createProject(input: CreateProjectInput) {

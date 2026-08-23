@@ -4,23 +4,29 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ProjectTodoBoard } from "@/components/project-todo-board";
+import { ProjectInviteDialog } from "@/components/project-invite-dialog";
+import { getCurrentAuthUser } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/client";
 import { getProjectMinutes } from "@/lib/api/minutes";
 import {
   deleteProject,
   getProject,
+  getProjectMembers,
   permanentlyDeleteProject,
   restoreProject,
+  type ProjectMember,
 } from "@/lib/api/projects";
 import type { MinutesSummary, Project } from "@/types/minutes";
 
 async function fetchProjectData(projectId: string, signal?: AbortSignal) {
-  const [project, minutesList] = await Promise.all([
+  const [project, minutesList, accountMembers, currentUser] = await Promise.all([
     getProject(projectId, signal),
     getProjectMinutes(projectId, signal),
+    getProjectMembers(projectId, signal),
+    getCurrentAuthUser(signal),
   ]);
 
-  return { project, minutesList };
+  return { project, minutesList, accountMembers, currentUser };
 }
 
 export default function ProjectDetailPage() {
@@ -28,6 +34,8 @@ export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [project, setProject] = useState<Project | null>(null);
   const [minutesList, setMinutesList] = useState<MinutesSummary[]>([]);
+  const [accountMembers, setAccountMembers] = useState<ProjectMember[]>([]);
+  const [currentAuthUserId, setCurrentAuthUserId] = useState("");
   const [loadedProjectId, setLoadedProjectId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
@@ -38,6 +46,7 @@ export default function ProjectDetailPage() {
   const [isRestoring, setIsRestoring] = useState(false);
   const [confirmPermanentDelete, setConfirmPermanentDelete] = useState(false);
   const [isPermanentlyDeleting, setIsPermanentlyDeleting] = useState(false);
+  const [isInviteDialogOpen, setIsInviteDialogOpen] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -46,6 +55,8 @@ export default function ProjectDetailPage() {
       .then((data) => {
         setProject(data.project);
         setMinutesList(data.minutesList);
+        setAccountMembers(data.accountMembers);
+        setCurrentAuthUserId(data.currentUser.authUserId);
         setLoadError("");
         setProjectNotFound(false);
       })
@@ -54,6 +65,8 @@ export default function ProjectDetailPage() {
 
         setProject(null);
         setMinutesList([]);
+        setAccountMembers([]);
+        setCurrentAuthUserId("");
 
         if (error instanceof ApiError && error.status === 404) {
           setProjectNotFound(true);
@@ -87,9 +100,13 @@ export default function ProjectDetailPage() {
       const data = await fetchProjectData(id);
       setProject(data.project);
       setMinutesList(data.minutesList);
+      setAccountMembers(data.accountMembers);
+      setCurrentAuthUserId(data.currentUser.authUserId);
     } catch (error) {
       setProject(null);
       setMinutesList([]);
+      setAccountMembers([]);
+      setCurrentAuthUserId("");
 
       if (error instanceof ApiError && error.status === 404) {
         setProjectNotFound(true);
@@ -215,8 +232,23 @@ export default function ProjectDetailPage() {
   const isDeletedProject = project.status === "DELETED";
   const isEndedProject = project.status === "DISPOSED";
   const canCreateMinutes = !isDeletedProject && !isEndedProject;
+  const hasAccountMembers = accountMembers.length > 0;
+  const canManageProject =
+    !hasAccountMembers ||
+    accountMembers.some(
+      (member) =>
+        member.userId === currentAuthUserId && member.role === "OWNER"
+    );
   const endDate = project.endDate ?? project.disposalDeadline;
   const endedAt = project.endedAt ?? project.disposedAt;
+  const memberSummary = hasAccountMembers
+    ? accountMembers
+        .map(
+          (member) =>
+            `${member.displayName}${member.role === "OWNER" ? " (소유자)" : ""}`
+        )
+        .join(", ")
+    : project.members.join(", ");
 
   return (
     <main className="flex flex-1 flex-col items-center px-4 py-8 sm:py-12">
@@ -225,7 +257,7 @@ export default function ProjectDetailPage() {
           <div className="min-w-0">
             <h1 className="break-words text-2xl font-bold">{project.name}</h1>
             <p className="break-words text-sm text-zinc-500">
-              팀원: {project.members.join(", ")}
+              팀원: {memberSummary || "등록된 팀원 없음"}
             </p>
             <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
               <ProjectStatusBadge status={project.status} />
@@ -237,6 +269,15 @@ export default function ProjectDetailPage() {
             </div>
           </div>
           <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:shrink-0">
+            {canCreateMinutes && canManageProject && (
+              <button
+                type="button"
+                onClick={() => setIsInviteDialogOpen(true)}
+                className="flex-1 rounded-lg border border-zinc-300 px-4 py-2 text-center text-sm font-medium transition-colors hover:bg-zinc-100 sm:flex-none dark:border-zinc-700 dark:hover:bg-zinc-800"
+              >
+                팀원 초대
+              </button>
+            )}
             {!isDeletedProject && (
               <Link
                 href={`/projects/${id}/dashboard`}
@@ -253,7 +294,7 @@ export default function ProjectDetailPage() {
                 새 회의록
               </Link>
             )}
-            {!isDeletedProject && (!confirmDelete ? (
+            {!isDeletedProject && canManageProject && (!confirmDelete ? (
               <button
                 type="button"
                 onClick={() => {
@@ -287,7 +328,7 @@ export default function ProjectDetailPage() {
                 </button>
               </div>
             ))}
-            {isDeletedProject && (
+            {isDeletedProject && canManageProject && (
               <div className="flex w-full flex-wrap gap-2 sm:w-auto">
                 <button
                   type="button"
@@ -404,6 +445,13 @@ export default function ProjectDetailPage() {
           </div>
         )}
       </div>
+      {isInviteDialogOpen && (
+        <ProjectInviteDialog
+          projectId={id}
+          projectName={project.name}
+          onClose={() => setIsInviteDialogOpen(false)}
+        />
+      )}
     </main>
   );
 }

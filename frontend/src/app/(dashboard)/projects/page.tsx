@@ -104,20 +104,30 @@ export default function ProjectsPage() {
   return (
     <main className="flex flex-1 flex-col items-center px-4 py-8 sm:py-12">
       <div className="w-full max-w-2xl">
-        <div className="mb-8 flex items-center justify-between gap-4">
+        <div className="mb-8 flex items-start justify-between gap-4">
           <h1 className="text-2xl font-bold">
             {isCreating ? "새 프로젝트" : "프로젝트"}
           </h1>
-          <button
-            type="button"
-            onClick={() => {
-              setIsCreating((current) => !current);
-              setCreateError("");
-            }}
-            className="shrink-0 cursor-pointer rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-          >
-            {isCreating ? "취소" : "새 프로젝트"}
-          </button>
+          <div className="flex shrink-0 flex-wrap justify-end gap-2">
+            {!isCreating && (
+              <Link
+                href="/join"
+                className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+              >
+                초대 코드 입력
+              </Link>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                setIsCreating((current) => !current);
+                setCreateError("");
+              }}
+              className="shrink-0 cursor-pointer rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+            >
+              {isCreating ? "취소" : "새 프로젝트"}
+            </button>
+          </div>
         </div>
 
         {isCreating && (

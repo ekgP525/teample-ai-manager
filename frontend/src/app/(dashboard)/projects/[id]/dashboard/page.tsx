@@ -20,15 +20,13 @@ import type { Project } from "@/types/minutes";
 export default function ProjectDashboardPage() {
   const { id } = useParams<{ id: string }>();
   const [project, setProject] = useState<Project | null>(null);
-  const [currentUser, setCurrentUser] = useState("");
   const [myDashboard, setMyDashboard] = useState<MyProjectDashboard | null>(null);
   const [teamDashboard, setTeamDashboard] = useState<TeamProjectDashboard | null>(null);
   const [projectError, setProjectError] = useState("");
   const [dashboardError, setDashboardError] = useState("");
   const [loadedProjectId, setLoadedProjectId] = useState("");
-  const [loadedDashboardKey, setLoadedDashboardKey] = useState("");
+  const [loadedDashboardId, setLoadedDashboardId] = useState("");
   const [pendingAssignmentId, setPendingAssignmentId] = useState("");
-  const dashboardKey = `${id}/${currentUser}`;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -36,13 +34,6 @@ export default function ProjectDashboardPage() {
     void getProject(id, controller.signal)
       .then((data) => {
         setProject(data);
-        setCurrentUser((selected) =>
-          data.status === "DELETED"
-            ? ""
-            : selected && data.members.includes(selected)
-              ? selected
-              : data.members[0] || ""
-        );
         setProjectError("");
       })
       .catch((error: unknown) => {
@@ -63,12 +54,12 @@ export default function ProjectDashboardPage() {
   }, [id]);
 
   useEffect(() => {
-    if (!currentUser) return;
+    if (!project || project.id !== id || project.status === "DELETED") return;
     const controller = new AbortController();
 
     void Promise.all([
-      getMyProjectDashboard(id, currentUser, controller.signal),
-      getTeamProjectDashboard(id, currentUser, controller.signal),
+      getMyProjectDashboard(id, controller.signal),
+      getTeamProjectDashboard(id, controller.signal),
     ])
       .then(([mine, team]) => {
         setMyDashboard(mine);
@@ -87,21 +78,20 @@ export default function ProjectDashboardPage() {
         }
       })
       .finally(() => {
-        if (!controller.signal.aborted) setLoadedDashboardKey(dashboardKey);
+        if (!controller.signal.aborted) setLoadedDashboardId(id);
       });
 
     return () => controller.abort();
-  }, [currentUser, dashboardKey, id]);
+  }, [id, project]);
 
   const reloadDashboards = async () => {
-    if (!currentUser) return;
-    setLoadedDashboardKey("");
+    setLoadedDashboardId("");
     setDashboardError("");
 
     try {
       const [mine, team] = await Promise.all([
-        getMyProjectDashboard(id, currentUser),
-        getTeamProjectDashboard(id, currentUser),
+        getMyProjectDashboard(id),
+        getTeamProjectDashboard(id),
       ]);
       setMyDashboard(mine);
       setTeamDashboard(team);
@@ -112,7 +102,7 @@ export default function ProjectDashboardPage() {
           : "프로젝트 대시보드를 불러오지 못했습니다."
       );
     } finally {
-      setLoadedDashboardKey(dashboardKey);
+      setLoadedDashboardId(id);
     }
   };
 
@@ -121,14 +111,10 @@ export default function ProjectDashboardPage() {
     setDashboardError("");
 
     try {
-      await updateTodoAssignment(
-        assignment.assignmentId,
-        currentUser,
-        !assignment.completed
-      );
+      await updateTodoAssignment(assignment.assignmentId, !assignment.completed);
       const [mine, team] = await Promise.all([
-        getMyProjectDashboard(id, currentUser),
-        getTeamProjectDashboard(id, currentUser),
+        getMyProjectDashboard(id),
+        getTeamProjectDashboard(id),
       ]);
       setMyDashboard(mine);
       setTeamDashboard(team);
@@ -170,12 +156,12 @@ export default function ProjectDashboardPage() {
     );
   }
 
-  const dashboardIsLoading = Boolean(currentUser) && loadedDashboardKey !== dashboardKey;
+  const dashboardIsLoading = loadedDashboardId !== id;
 
   return (
     <main className="flex flex-1 flex-col items-center px-4 py-8 sm:py-12">
       <div className="w-full max-w-4xl">
-        <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="mb-8">
           <div>
             <Link
               href={`/projects/${id}`}
@@ -200,31 +186,13 @@ export default function ProjectDashboardPage() {
             <h1 className="mt-2 break-words text-2xl font-bold">
               {project.name} 대시보드
             </h1>
-          </div>
-          <div className="flex flex-col gap-2 sm:items-end">
-            <label className="flex flex-col gap-1 text-sm font-medium">
-              사용자 선택
-              <select
-                value={currentUser}
-                onChange={(event) => {
-                  setCurrentUser(event.target.value);
-                  setDashboardError("");
-                }}
-                className="min-w-40 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-              >
-                {project.members.map((member) => (
-                  <option key={member} value={member}>
-                    {member}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <p className="mt-1 text-sm text-zinc-500">
+              로그인한 계정에 배정된 업무와 팀 전체 진행률입니다.
+            </p>
           </div>
         </div>
 
-        {!currentUser ? (
-          <EmptyState message="프로젝트에 등록된 팀원이 없습니다." />
-        ) : dashboardIsLoading ? (
+        {dashboardIsLoading ? (
           <PageLoading message="진행률을 불러오는 중..." embedded />
         ) : dashboardError ? (
           <PageError message={dashboardError} onRetry={reloadDashboards} embedded />
@@ -252,7 +220,7 @@ export default function ProjectDashboardPage() {
               <div className="mb-4 flex items-end justify-between gap-4">
                 <div>
                   <h2 className="text-xl font-semibold">
-                    {myDashboard.memberName || currentUser} 진행 상황
+                    {myDashboard.memberName || "내"} 진행 상황
                   </h2>
                   <p className="mt-1 text-sm text-zinc-500">
                     다음 목표: {myDashboard.target || "등록된 목표 없음"}
@@ -275,7 +243,9 @@ export default function ProjectDashboardPage() {
                     />
                   ))
                 ) : (
-                  <EmptyState message={`${currentUser}님에게 배정된 업무가 없습니다.`} />
+                  <EmptyState
+                    message={`${myDashboard.memberName || "현재 사용자"}님에게 배정된 업무가 없습니다.`}
+                  />
                 )}
               </div>
             </section>
