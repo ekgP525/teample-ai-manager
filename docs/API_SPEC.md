@@ -666,14 +666,14 @@ memberKey = user_metadata 표시 이름 -> email prefix -> sub
 기본값:
 
 ```env
-ADMIN_TEST_ID=Admin
+ADMIN_TEST_ID=admin
 ADMIN_TEST_PASSWORD=1234
 ```
 
 헤더 방식:
 
 ```http
-X-Admin-Id: Admin
+X-Admin-Id: admin
 X-Admin-Password: 1234
 X-Current-User-Id: member-a
 ```
@@ -681,7 +681,7 @@ X-Current-User-Id: member-a
 Basic Auth 방식:
 
 ```http
-Authorization: Basic Base64(Admin:1234)
+Authorization: Basic Base64(admin:1234)
 X-Current-User-Id: member-a
 ```
 
@@ -721,7 +721,7 @@ POST /api/auth/admin/verify
 Content-Type: application/json
 
 {
-  "adminId": "Admin",
+  "adminId": "admin",
   "password": "1234"
 }
 ```
@@ -731,7 +731,7 @@ Content-Type: application/json
 ```json
 {
   "admin": true,
-  "adminId": "Admin",
+  "adminId": "admin",
   "authMode": "ADMIN_TEST"
 }
 ```

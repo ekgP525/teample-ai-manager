@@ -3,8 +3,12 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, type FormEvent, useEffect, useState } from "react";
+import { clearAdminTestSession, hasAdminTestSession, setAdminTestSession } from "@/lib/admin-test-auth";
 import { signInWithOAuth as signInWithSocialOAuth } from "@/lib/sign-in-with-oauth";
 import { supabase } from "@/lib/supabase";
+
+const ADMIN_TEST_ID = "admin";
+const apiUrl = process.env.NEXT_PUBLIC_API_URL;
 
 function LoginForm() {
   const router = useRouter();
@@ -29,7 +33,7 @@ function LoginForm() {
 
         if (sessionError) throw sessionError;
 
-        if (session && isMounted) {
+        if ((session || hasAdminTestSession()) && isMounted) {
           router.replace(next);
           router.refresh();
         }
@@ -53,8 +57,45 @@ function LoginForm() {
     setIsLoading(true);
 
     try {
+      const loginId = email.trim();
+      const normalizedEmail = loginId.toLowerCase();
+      const isAdminTestLogin = loginId === ADMIN_TEST_ID;
+
+      if (isAdminTestLogin) {
+        if (!apiUrl) {
+          setError("Backend API URL is not configured.");
+          return;
+        }
+
+        const response = await fetch(`${apiUrl}/api/auth/admin/verify`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: loginId, password }),
+        });
+
+        if (!response.ok) {
+          setError("관리자 계정 또는 비밀번호를 확인해 주세요.");
+          return;
+        }
+
+        setAdminTestSession(loginId, password);
+        router.replace(next);
+        router.refresh();
+        return;
+      }
+
+      if (!normalizedEmail.includes("@")) {
+        setError("이메일 형식을 확인해 주세요.");
+        return;
+      }
+      if (password.length < 6) {
+        setError("비밀번호는 6자 이상 입력해 주세요.");
+        return;
+      }
+
+      clearAdminTestSession();
       const { error: signInError } = await supabase.auth.signInWithPassword({
-        email,
+        email: normalizedEmail,
         password,
       });
 
@@ -71,7 +112,6 @@ function LoginForm() {
       setIsLoading(false);
     }
   }
-
   async function signInWithOAuth(provider: "google" | "kakao") {
     setError(null);
     setIsLoading(true);
@@ -93,7 +133,7 @@ function LoginForm() {
     <main className="flex flex-1 flex-col items-center justify-center px-4">
       <div className="w-full max-w-sm">
         <h1 className="text-2xl font-bold mb-6 text-center">로그인</h1>
-        <form onSubmit={signInWithEmail} className="flex flex-col gap-4">
+        <form onSubmit={signInWithEmail} noValidate className="flex flex-col gap-4">
           <input
             type="email"
             placeholder="이메일"

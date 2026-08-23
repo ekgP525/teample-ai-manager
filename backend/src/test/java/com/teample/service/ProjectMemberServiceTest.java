@@ -130,7 +130,7 @@ class ProjectMemberServiceTest {
 
     @Test
     void findProjectMembersAllowsAdminTestUser() {
-        AuthenticatedUser admin = new AuthenticatedUser("admin-test:Admin", "Admin", null);
+        AuthenticatedUser admin = new AuthenticatedUser("admin-test:admin", "admin", null);
         Project project = Project.builder().id("project-id").name("project").build();
         ProjectMember member = ProjectMember.builder()
                 .project(project)
@@ -146,7 +146,7 @@ class ProjectMemberServiceTest {
 
         assertThat(response).isPresent();
         assertThat(response.get()).extracting(ProjectMemberResponse::userId).containsExactly("member-user-id");
-        verify(projectMemberRepository, never()).existsByProjectIdAndUserId("project-id", "admin-test:Admin");
+        verify(projectMemberRepository, never()).existsByProjectIdAndUserId("project-id", "admin-test:admin");
     }
 
     @Test

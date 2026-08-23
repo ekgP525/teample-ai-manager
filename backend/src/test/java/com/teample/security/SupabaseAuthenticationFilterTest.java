@@ -48,16 +48,16 @@ class SupabaseAuthenticationFilterTest {
         MockHttpServletResponse response = new MockHttpServletResponse();
         FilterChain filterChain = mock(FilterChain.class);
 
-        request.addHeader(SupabaseAuthenticationFilter.ADMIN_ID_HEADER, "Admin");
+        request.addHeader(SupabaseAuthenticationFilter.ADMIN_ID_HEADER, "admin");
         request.addHeader(SupabaseAuthenticationFilter.ADMIN_PASSWORD_HEADER, "1234");
         request.addHeader(SupabaseAuthenticationFilter.CURRENT_USER_ID_HEADER, "member-a");
-        when(adminTestAuthService.matches("Admin", "1234")).thenReturn(true);
-        when(adminTestAuthService.adminId()).thenReturn("Admin");
+        when(adminTestAuthService.matches("admin", "1234")).thenReturn(true);
+        when(adminTestAuthService.adminId()).thenReturn("admin");
 
         filter.doFilter(request, response, filterChain);
 
         assertThat(request.getAttribute(SupabaseAuthenticationFilter.CURRENT_USER_ID_ATTRIBUTE)).isEqualTo("member-a");
-        assertThat(request.getAttribute(SupabaseAuthenticationFilter.AUTH_USER_ID_ATTRIBUTE)).isEqualTo("admin-test:Admin");
+        assertThat(request.getAttribute(SupabaseAuthenticationFilter.AUTH_USER_ID_ATTRIBUTE)).isEqualTo("admin-test:admin");
         assertThat(request.getAttribute(SupabaseAuthenticationFilter.ADMIN_TEST_USER_ATTRIBUTE)).isEqualTo(true);
         verifyNoInteractions(authService);
         verify(filterChain).doFilter(request, response);
@@ -71,12 +71,12 @@ class SupabaseAuthenticationFilterTest {
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/projects/project-1/dashboard/team");
         MockHttpServletResponse response = new MockHttpServletResponse();
         FilterChain filterChain = mock(FilterChain.class);
-        String basic = Base64.getEncoder().encodeToString("Admin:1234".getBytes(StandardCharsets.UTF_8));
+        String basic = Base64.getEncoder().encodeToString("admin:1234".getBytes(StandardCharsets.UTF_8));
 
         request.addHeader("Authorization", "Basic " + basic);
         request.addHeader(SupabaseAuthenticationFilter.CURRENT_USER_ID_HEADER, "member-b");
-        when(adminTestAuthService.matches("Admin", "1234")).thenReturn(true);
-        when(adminTestAuthService.adminId()).thenReturn("Admin");
+        when(adminTestAuthService.matches("admin", "1234")).thenReturn(true);
+        when(adminTestAuthService.adminId()).thenReturn("admin");
 
         filter.doFilter(request, response, filterChain);
 
@@ -95,9 +95,9 @@ class SupabaseAuthenticationFilterTest {
         MockHttpServletResponse response = new MockHttpServletResponse();
         FilterChain filterChain = mock(FilterChain.class);
 
-        request.addHeader(SupabaseAuthenticationFilter.ADMIN_ID_HEADER, "Admin");
+        request.addHeader(SupabaseAuthenticationFilter.ADMIN_ID_HEADER, "admin");
         request.addHeader(SupabaseAuthenticationFilter.ADMIN_PASSWORD_HEADER, "wrong");
-        when(adminTestAuthService.matches("Admin", "wrong")).thenReturn(false);
+        when(adminTestAuthService.matches("admin", "wrong")).thenReturn(false);
 
         filter.doFilter(request, response, filterChain);
 
