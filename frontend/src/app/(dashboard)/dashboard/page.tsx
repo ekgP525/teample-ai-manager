@@ -67,7 +67,7 @@ export default function DashboardPage() {
         <div className="mb-8">
           <h1 className="text-2xl font-bold">대시보드</h1>
           <p className="mt-1 text-sm text-zinc-500">
-            프로젝트를 선택한 뒤 해당 프로젝트의 사용자별 진행 상황을 확인하세요.
+            프로젝트를 선택해 내 업무와 팀 전체 진행 상황을 확인하세요.
           </p>
         </div>
 

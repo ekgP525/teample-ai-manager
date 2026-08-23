@@ -16,6 +16,15 @@ function LoginForm() {
   const next = searchParams.get("next")?.startsWith("/")
     ? searchParams.get("next")!
     : "/projects";
+  const reason = searchParams.get("reason");
+  const redirectMessage =
+    reason === "session-expired"
+      ? "로그인이 만료되었습니다. 다시 로그인해 주세요."
+      : reason === "login-required"
+        ? "로그인이 필요한 페이지입니다."
+        : searchParams.get("error")
+          ? "로그인에 실패했습니다. 다시 시도해 주세요."
+          : null;
 
   useEffect(() => {
     let isMounted = true;
@@ -29,7 +38,7 @@ function LoginForm() {
 
         if (sessionError) throw sessionError;
 
-        if (session && isMounted) {
+        if (session && isMounted && reason !== "session-expired") {
           router.replace(next);
           router.refresh();
         }
@@ -45,7 +54,7 @@ function LoginForm() {
     return () => {
       isMounted = false;
     };
-  }, [next, router]);
+  }, [next, reason, router]);
 
   async function signInWithEmail(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -147,9 +156,9 @@ function LoginForm() {
           <span aria-hidden="true">💬</span>
           카카오로 로그인
         </button>
-        {(error || searchParams.get("error")) && (
+        {(error || redirectMessage) && (
           <p role="alert" className="mt-4 text-center text-sm text-red-600">
-            {error ?? "로그인에 실패했습니다. 다시 시도해 주세요."}
+            {error ?? redirectMessage}
           </p>
         )}
         <p className="mt-4 text-center text-sm text-zinc-500">

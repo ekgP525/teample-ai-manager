@@ -18,7 +18,8 @@ export function AuthSessionGuard({ children }: { children: React.ReactNode }) {
         const { data, error } = await supabase.auth.getSession();
         if (error) throw error;
         if (!data.session) {
-          router.replace(`/login?next=${encodeURIComponent(pathname)}`);
+          const currentPath = `${window.location.pathname}${window.location.search}`;
+          router.replace(`/login?next=${encodeURIComponent(currentPath)}`);
           return;
         }
         if (isMounted) setIsChecking(false);
