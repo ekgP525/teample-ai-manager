@@ -9,7 +9,6 @@ export default function ProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [isCreating, setIsCreating] = useState(false);
   const [name, setName] = useState("");
-  const [members, setMembers] = useState("");
   const [endDate, setEndDate] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
@@ -66,15 +65,10 @@ export default function ProjectsPage() {
     try {
       const created = await createProject({
         name: name.trim(),
-        members: members
-          .split(",")
-          .map((member) => member.trim())
-          .filter(Boolean),
         endDate: endDate || undefined,
       });
       setProjects((currentProjects) => [created, ...currentProjects]);
       setName("");
-      setMembers("");
       setEndDate("");
       setIsCreating(false);
     } catch (error) {
@@ -88,10 +82,6 @@ export default function ProjectsPage() {
     }
   };
 
-  const memberList = members
-    .split(",")
-    .map((member) => member.trim())
-    .filter(Boolean);
   const currentProjects = projects.filter(
     (project) =>
       project.status !== "DISPOSED" && project.status !== "DELETED"
@@ -166,20 +156,6 @@ export default function ProjectsPage() {
                   날짜가 지나면 프로젝트가 자동으로 종료 상태로 전환됩니다.
                 </p>
               </div>
-              <div className="flex flex-col gap-1.5">
-                <label htmlFor="project-members" className="text-sm font-medium">
-                  팀원 이름 (쉼표로 구분)
-                </label>
-                <input
-                  id="project-members"
-                  type="text"
-                  placeholder="예: 이다혜, 박규남, 김다희"
-                  value={members}
-                  onChange={(event) => setMembers(event.target.value)}
-                  disabled={isSubmitting}
-                  className="rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:border-zinc-700 dark:bg-zinc-900"
-                />
-              </div>
               {createError && (
                 <p
                   role="alert"
@@ -190,7 +166,7 @@ export default function ProjectsPage() {
               )}
               <button
                 type="submit"
-                disabled={!name.trim() || memberList.length === 0 || isSubmitting}
+                disabled={!name.trim() || isSubmitting}
                 className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-800 disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
               >
                 {isSubmitting ? "생성 중..." : "생성"}

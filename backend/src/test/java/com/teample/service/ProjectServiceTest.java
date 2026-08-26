@@ -6,6 +6,7 @@ import com.teample.entity.Project;
 import com.teample.entity.ProjectStatus;
 import com.teample.repository.IntegratedTodoRepository;
 import com.teample.repository.MinutesRepository;
+import com.teample.repository.ProjectInvitationRepository;
 import com.teample.repository.ProjectMemberRepository;
 import com.teample.repository.ProjectRepository;
 import com.teample.security.AuthenticatedUser;
@@ -47,6 +48,9 @@ class ProjectServiceTest {
     @Mock
     private ProjectMemberRepository projectMemberRepository;
 
+    @Mock
+    private ProjectInvitationRepository projectInvitationRepository;
+
     private ProjectService service;
 
     @BeforeEach
@@ -57,7 +61,8 @@ class ProjectServiceTest {
                 minutesRepository,
                 todoProgressSyncService,
                 projectMemberService,
-                projectMemberRepository
+                projectMemberRepository,
+                projectInvitationRepository
         );
     }
 
@@ -74,6 +79,7 @@ class ProjectServiceTest {
         assertThat(response.getStatus()).isEqualTo("ACTIVE");
         assertThat(response.getEndDate()).isNull();
         assertThat(response.getDisposalDeadline()).isNull();
+        verify(projectRepository).save(org.mockito.ArgumentMatchers.argThat(project -> project.getMembers().isEmpty()));
     }
 
     @Test

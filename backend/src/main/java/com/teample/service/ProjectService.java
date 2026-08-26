@@ -6,6 +6,7 @@ import com.teample.entity.Project;
 import com.teample.entity.ProjectStatus;
 import com.teample.repository.IntegratedTodoRepository;
 import com.teample.repository.MinutesRepository;
+import com.teample.repository.ProjectInvitationRepository;
 import com.teample.repository.ProjectMemberRepository;
 import com.teample.repository.ProjectRepository;
 import com.teample.security.AuthenticatedUser;
@@ -28,6 +29,7 @@ public class ProjectService {
     private final TodoProgressSyncService todoProgressSyncService;
     private final ProjectMemberService projectMemberService;
     private final ProjectMemberRepository projectMemberRepository;
+    private final ProjectInvitationRepository projectInvitationRepository;
 
     public ProjectResponse create(ProjectRequest request) {
         return create(request, null);
@@ -37,7 +39,7 @@ public class ProjectService {
     public ProjectResponse create(ProjectRequest request, AuthenticatedUser owner) {
         Project project = Project.builder()
                 .name(request.getName())
-                .members(request.getMembers())
+                .members(List.of())
                 .endDate(request.getEndDate())
                 .build();
         synchronizeStatus(project);
@@ -120,6 +122,7 @@ public class ProjectService {
     @Transactional
     public boolean permanentlyDelete(String id) {
         return projectRepository.findById(id).map(project -> {
+            projectInvitationRepository.deleteByProjectId(project.getId());
             projectMemberRepository.deleteByProjectId(project.getId());
             todoProgressSyncService.deleteByProject(project);
             integratedTodoRepository.deleteByProjectId(project.getId());
