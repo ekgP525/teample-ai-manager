@@ -39,6 +39,8 @@ public class SupabaseAuthenticationFilter extends OncePerRequestFilter {
             Pattern.compile("^/api/todos/[^/]+/progress$")
     );
     private static final Pattern PROJECT_MEMBERS_PATH = Pattern.compile("^/api/projects/[^/]+/members$");
+    private static final Pattern PROJECT_INVITATIONS_PATH = Pattern.compile("^/api/projects/[^/]+/invitations$");
+    private static final Pattern JOIN_INVITATION_PATH = Pattern.compile("^/api/project-invitations/join$");
     private static final List<Pattern> PROJECT_RESOURCE_PATHS = List.of(
             Pattern.compile("^/api/projects/[^/]+$"),
             Pattern.compile("^/api/projects/[^/]+/(restore|permanent)$"),
@@ -91,6 +93,11 @@ public class SupabaseAuthenticationFilter extends OncePerRequestFilter {
             return true;
         }
         if ("GET".equalsIgnoreCase(method) && PROJECT_MEMBERS_PATH.matcher(requestPath).matches()) {
+            return true;
+        }
+        if ("POST".equalsIgnoreCase(method)
+                && (PROJECT_INVITATIONS_PATH.matcher(requestPath).matches()
+                || JOIN_INVITATION_PATH.matcher(requestPath).matches())) {
             return true;
         }
         if (PROJECT_RESOURCE_PATHS.stream().anyMatch(pattern -> pattern.matcher(requestPath).matches())) {

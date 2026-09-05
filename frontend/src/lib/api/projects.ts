@@ -3,7 +3,6 @@ import { apiRequest } from "./client";
 
 export interface CreateProjectInput {
   name: string;
-  members: string[];
   endDate?: string;
 }
 

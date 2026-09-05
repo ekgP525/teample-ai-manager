@@ -795,8 +795,57 @@ Content-Type: application/json
 
 프로젝트 생성 성공 시 JWT의 `sub` 사용자가 `project_members`에 `OWNER`로 자동 등록됩니다.
 
-기존 `ProjectRequest.members`는 프론트/회의록/업무 담당자 호환을 위해 유지합니다. 초대/협업이 완성되기 전까지 제거하지 않습니다.
-### 11.8 JWT 적용 보호 API
+새 프로젝트 생성 시 `Project.members`는 빈 목록으로 저장되며, JWT의 `sub` 사용자만 `project_members`의 `OWNER`로 등록됩니다. 기존 프로젝트의 `Project.members` 데이터는 레거시 호환을 위해 유지됩니다.
+
+### 11.8 프로젝트 초대
+
+#### 초대 코드 생성
+
+```http
+POST /api/projects/{projectId}/invitations
+Authorization: Bearer <Supabase Access Token>
+```
+
+프로젝트 OWNER만 호출할 수 있습니다. 기존 활성 코드는 비활성화되고, 72시간 후 만료되는 새 12자리 코드가 발급됩니다.
+
+응답 `200 OK`:
+
+```json
+{
+  "code": "A7KD92QM4X8P",
+  "expiresAt": "2026-08-29T12:00:00"
+}
+```
+
+오류: `401` 인증 필요, `403` OWNER 아님, `404` 프로젝트 없음
+
+#### 초대 코드로 참여
+
+```http
+POST /api/project-invitations/join
+Authorization: Bearer <Supabase Access Token>
+Content-Type: application/json
+```
+
+```json
+{ "code": "A7KD92QM4X8P" }
+```
+
+유효한 코드이면 JWT `sub` 사용자를 `project_members`에 `MEMBER`로 등록하고 프로젝트 정보를 반환합니다. `Project.members` 문자열에는 추가하지 않습니다.
+
+응답 `200 OK`:
+
+```json
+{
+  "projectId": "project-id",
+  "projectName": "AI 캡스톤디자인",
+  "role": "MEMBER"
+}
+```
+
+오류: `401` 인증 필요, `404` 코드 또는 프로젝트 없음, `409` 이미 참여 중, `410` 만료 또는 비활성 코드
+
+### 11.9 JWT 적용 보호 API
 
 다음 API는 인증 필터를 통과해야 하며, 컨트롤러에서 프로젝트 회원 또는 OWNER 권한을 확인합니다.
 
@@ -823,7 +872,7 @@ Content-Type: application/json
 - 기존 프로젝트 중 `project_members` 행이 아직 없는 프로젝트는 `Project.members` 문자열과 로그인 사용자의 `authUserId`, `memberKey`, `email` 중 하나가 일치하면 임시로 프로젝트 회원으로 인정합니다.
 - `project_members` 행이 하나라도 있는 프로젝트는 레거시 `Project.members`만으로 권한을 인정하지 않습니다.
 - 이 호환 규칙은 기존 데이터 마이그레이션이 끝날 때 제거할 수 있습니다.
-### 11.9 대시보드 JWT 권한 기준
+### 11.10 대시보드 JWT 권한 기준
 
 이번 단계에서는 Spring Security `SecurityFilterChain` 전환 대신 기존 커스텀 `OncePerRequestFilter` 기반 인증 필터를 유지합니다.
 
@@ -861,7 +910,7 @@ Content-Type: application/json
 - `project_members`가 있으면 `project_members.display_name`을 우선 사용합니다.
 - `project_members`가 없으면 기존 `Project.members`를 사용합니다.
 - 실제 진행률 행이 있는 사용자는 초기 목록에 없어도 응답에 포함됩니다.
-### 11.10 프로젝트 목록 JWT 전환
+### 11.11 프로젝트 목록 JWT 전환
 
 `GET /api/projects`와 `GET /api/projects/trash`는 이제 인증 필수 API입니다.
 
