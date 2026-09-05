@@ -178,7 +178,7 @@ export default function NewMinutesPage() {
 
   return (
     <main className="flex flex-1 flex-col items-center px-4 py-8 sm:py-12">
-      <div className="w-full max-w-2xl">
+      <div className="w-full max-w-4xl">
         <div className="mb-8">
           <h1 className="text-2xl font-bold">새 회의록 생성</h1>
           <p className="mt-1 text-sm text-zinc-500">
