@@ -10,6 +10,8 @@ public interface ProjectMemberRepository extends JpaRepository<ProjectMember, St
 
     List<ProjectMember> findByProjectIdOrderByJoinedAtAsc(String projectId);
 
+    List<ProjectMember> findByUserIdOrderByJoinedAtAsc(String userId);
+
     boolean existsByProjectId(String projectId);
 
     boolean existsByProjectIdAndUserId(String projectId, String userId);

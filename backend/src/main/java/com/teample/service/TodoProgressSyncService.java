@@ -2,10 +2,12 @@ package com.teample.service;
 
 import com.teample.entity.Minutes;
 import com.teample.entity.Project;
+import com.teample.entity.ProjectMember;
 import com.teample.entity.ProjectTodo;
 import com.teample.entity.TodoData;
 import com.teample.entity.TodoMemberProgress;
 import com.teample.repository.MinutesRepository;
+import com.teample.repository.ProjectMemberRepository;
 import com.teample.repository.ProjectTodoRepository;
 import com.teample.repository.TodoMemberProgressRepository;
 import lombok.RequiredArgsConstructor;
@@ -31,6 +33,7 @@ public class TodoProgressSyncService {
     private static final Pattern ASSIGNEE_SEPARATOR = Pattern.compile("[,/;|&]+|\\band\\b", Pattern.CASE_INSENSITIVE);
 
     private final MinutesRepository minutesRepository;
+    private final ProjectMemberRepository projectMemberRepository;
     private final ProjectTodoRepository projectTodoRepository;
     private final TodoMemberProgressRepository todoMemberProgressRepository;
 
@@ -87,7 +90,7 @@ public class TodoProgressSyncService {
     }
 
     private void syncProgressRows(Project project, Minutes minutes, ProjectTodo projectTodo, TodoData sourceTodo) {
-        List<MemberRef> assignedMembers = resolveAssignedMembers(sourceTodo.getName(), project.getMembers());
+        List<MemberRef> assignedMembers = resolveAssignedMembers(sourceTodo.getName(), resolveProjectMembers(project));
         Set<String> activeUserIds = new HashSet<>();
         Map<String, TodoMemberProgress> existingByUserId = new LinkedHashMap<>();
 
@@ -135,8 +138,7 @@ public class TodoProgressSyncService {
         }
     }
 
-    private List<MemberRef> resolveAssignedMembers(String sourceAssignee, List<String> projectMembers) {
-        List<MemberRef> members = normalizeProjectMembers(projectMembers);
+    private List<MemberRef> resolveAssignedMembers(String sourceAssignee, List<MemberRef> members) {
         String assignee = normalizeOptional(sourceAssignee);
 
         if (assignee == null) {
@@ -163,6 +165,20 @@ public class TodoProgressSyncService {
             resolved.add(resolveMember(assignee, members));
         }
         return dedupe(resolved);
+    }
+
+    private List<MemberRef> resolveProjectMembers(Project project) {
+        List<MemberRef> accountMembers = projectMemberRepository.findByProjectIdOrderByJoinedAtAsc(project.getId()).stream()
+                .map(ProjectMember::getDisplayName)
+                .map(this::normalizeOptional)
+                .filter(memberName -> memberName != null)
+                .map(memberName -> new MemberRef(memberName, memberName))
+                .distinct()
+                .toList();
+        if (!accountMembers.isEmpty()) {
+            return accountMembers;
+        }
+        return normalizeProjectMembers(project.getMembers());
     }
 
     private List<MemberRef> normalizeProjectMembers(List<String> projectMembers) {

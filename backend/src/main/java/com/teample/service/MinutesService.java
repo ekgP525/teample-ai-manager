@@ -8,15 +8,20 @@ import com.teample.dto.TodoItem;
 import com.teample.entity.EvidenceData;
 import com.teample.entity.Minutes;
 import com.teample.entity.Project;
+import com.teample.entity.ProjectMember;
 import com.teample.entity.ProjectStatus;
 import com.teample.entity.TodoData;
 import com.teample.repository.MinutesRepository;
+import com.teample.repository.ProjectMemberRepository;
 import com.teample.repository.ProjectRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -28,6 +33,7 @@ public class MinutesService {
 
     private final MinutesRepository minutesRepository;
     private final ProjectRepository projectRepository;
+    private final ProjectMemberRepository projectMemberRepository;
     private final ClaudeService claudeService;
     private final ProjectTodoService projectTodoService;
     private final TodoProgressSyncService todoProgressSyncService;
@@ -35,21 +41,27 @@ public class MinutesService {
     @Transactional
     public MinutesResponse create(String projectId, MinutesRequest request) {
         Project project = projectRepository.findById(projectId)
-                .orElseThrow(() -> new RuntimeException("Project not found."));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Project not found."));
 
         if (project.blocksNewMinutes(LocalDate.now())) {
-            throw new IllegalStateException("Ended or deleted projects cannot create minutes.");
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Ended or deleted projects cannot create minutes.");
         }
 
-        ClaudeService.MinutesResult result = claudeService.analyze(
-                request.getRawText(),
-                project.getName(),
-                project.getMembers()
-        );
+        LocalDate meetingDate = parseMeetingDate(request.getMeetingDate());
+        ClaudeService.MinutesResult result;
+        try {
+            result = claudeService.analyze(
+                    request.getRawText(),
+                    project.getName(),
+                    resolveProjectMemberNames(project)
+            );
+        } catch (RuntimeException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, exception.getMessage(), exception);
+        }
 
         Minutes minutes = Minutes.builder()
                 .project(project)
-                .meetingDate(LocalDate.parse(request.getMeetingDate()))
+                .meetingDate(meetingDate)
                 .rawText(request.getRawText())
                 .title(request.getTitle() != null && !request.getTitle().isBlank()
                         ? request.getTitle() : result.title())
@@ -138,6 +150,35 @@ public class MinutesService {
         todoProgressSyncService.deleteByMinutes(minutes);
         minutesRepository.delete(minutes);
         return true;
+    }
+
+    private LocalDate parseMeetingDate(String value) {
+        try {
+            return LocalDate.parse(value);
+        } catch (DateTimeParseException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "회의 날짜 형식이 올바르지 않습니다.", exception);
+        }
+    }
+
+    private List<String> resolveProjectMemberNames(Project project) {
+        List<String> accountMemberNames = projectMemberRepository.findByProjectIdOrderByJoinedAtAsc(project.getId()).stream()
+                .map(ProjectMember::getDisplayName)
+                .map(this::normalizeOptional)
+                .filter(value -> value != null)
+                .distinct()
+                .toList();
+        if (!accountMemberNames.isEmpty()) {
+            return accountMemberNames;
+        }
+        return safeList(project.getMembers()).stream()
+                .map(this::normalizeOptional)
+                .filter(value -> value != null)
+                .distinct()
+                .toList();
+    }
+
+    private String normalizeOptional(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 
     private boolean belongsToProject(Minutes minutes, String projectId) {

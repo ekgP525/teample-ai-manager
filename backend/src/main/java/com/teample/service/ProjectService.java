@@ -3,6 +3,7 @@ package com.teample.service;
 import com.teample.dto.ProjectRequest;
 import com.teample.dto.ProjectResponse;
 import com.teample.entity.Project;
+import com.teample.entity.ProjectMember;
 import com.teample.entity.ProjectStatus;
 import com.teample.repository.IntegratedTodoRepository;
 import com.teample.repository.MinutesRepository;
@@ -45,7 +46,7 @@ public class ProjectService {
         synchronizeStatus(project);
         Project saved = projectRepository.save(project);
         projectMemberService.addOwner(saved, owner);
-        return ProjectResponse.from(saved);
+        return ProjectResponse.from(saved, resolveProjectMemberNames(saved, owner));
     }
 
     @Transactional
@@ -53,7 +54,7 @@ public class ProjectService {
         return projectRepository.findAll().stream()
                 .peek(this::synchronizeStatus)
                 .filter(Project::isVisibleInActiveList)
-                .map(ProjectResponse::from)
+                .map(this::toResponse)
                 .toList();
     }
 
@@ -63,14 +64,14 @@ public class ProjectService {
                 .peek(this::synchronizeStatus)
                 .filter(Project::isVisibleInActiveList)
                 .filter(project -> projectMemberService.canAccessProject(project, user, admin))
-                .map(ProjectResponse::from)
+                .map(this::toResponse)
                 .toList();
     }
 
     @Transactional
     public List<ProjectResponse> findTrash() {
         return projectRepository.findByStatus(ProjectStatus.DELETED).stream()
-                .map(ProjectResponse::from)
+                .map(this::toResponse)
                 .toList();
     }
 
@@ -78,7 +79,7 @@ public class ProjectService {
     public List<ProjectResponse> findTrash(AuthenticatedUser user, boolean admin) {
         return projectRepository.findByStatus(ProjectStatus.DELETED).stream()
                 .filter(project -> projectMemberService.canAccessProject(project, user, admin))
-                .map(ProjectResponse::from)
+                .map(this::toResponse)
                 .toList();
     }
 
@@ -97,7 +98,7 @@ public class ProjectService {
     public Optional<ProjectResponse> findById(String id) {
         return projectRepository.findById(id).map(project -> {
             synchronizeStatus(project);
-            return ProjectResponse.from(project);
+            return toResponse(project);
         });
     }
 
@@ -115,7 +116,7 @@ public class ProjectService {
                 .filter(Project::isDeleted)
                 .map(project -> {
                     project.restore(LocalDate.now(), LocalDateTime.now());
-                    return ProjectResponse.from(project);
+                    return toResponse(project);
                 });
     }
 
@@ -130,6 +131,33 @@ public class ProjectService {
             projectRepository.delete(project);
             return true;
         }).orElse(false);
+    }
+
+    private ProjectResponse toResponse(Project project) {
+        return ProjectResponse.from(project, resolveProjectMemberNames(project, null));
+    }
+
+    private List<String> resolveProjectMemberNames(Project project, AuthenticatedUser fallbackOwner) {
+        List<String> accountMemberNames = projectMemberRepository.findByProjectIdOrderByJoinedAtAsc(project.getId()).stream()
+                .map(ProjectMember::getDisplayName)
+                .map(this::normalizeOptional)
+                .filter(value -> value != null)
+                .distinct()
+                .toList();
+        if (!accountMemberNames.isEmpty()) {
+            return accountMemberNames;
+        }
+        if (fallbackOwner != null) {
+            String ownerName = normalizeOptional(fallbackOwner.memberKey());
+            if (ownerName != null) {
+                return List.of(ownerName);
+            }
+        }
+        return project.getMembers() != null ? project.getMembers() : List.of();
+    }
+
+    private String normalizeOptional(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 
     private void synchronizeStatus(Project project) {
