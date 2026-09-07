@@ -44,6 +44,15 @@ public class ProjectInvitationService {
         return ProjectInvitationResponse.from(invitationRepository.save(invitation));
     }
 
+    @Transactional(readOnly = true)
+    public ProjectInvitationResponse findActive(String projectId, AuthenticatedUser user, boolean admin) {
+        projectMemberService.ensureProjectOwner(projectId, user, admin);
+        return invitationRepository
+                .findFirstByProjectIdAndActiveTrueAndExpiresAtAfterOrderByCreatedAtDesc(projectId, LocalDateTime.now())
+                .map(ProjectInvitationResponse::from)
+                .orElseThrow(() -> new InvitationNotFoundException("Active invitation code not found."));
+    }
+
     @Transactional
     public JoinProjectInvitationResponse join(String code, AuthenticatedUser user) {
         ProjectInvitation invitation = invitationRepository.findByCode(code.trim().toUpperCase())

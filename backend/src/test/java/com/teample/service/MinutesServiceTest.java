@@ -6,15 +6,22 @@ import com.teample.entity.Minutes;
 import com.teample.entity.Project;
 import com.teample.entity.ProjectStatus;
 import com.teample.repository.MinutesRepository;
+import com.teample.repository.ProjectMemberRepository;
 import com.teample.repository.ProjectRepository;
 import org.junit.jupiter.api.Test;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 class MinutesServiceTest {
 
@@ -24,7 +31,7 @@ class MinutesServiceTest {
         Minutes minutes = Minutes.builder().id("minutes-id").build();
         when(minutesRepository.findById("minutes-id")).thenReturn(Optional.of(minutes));
         MinutesService service = new MinutesService(
-                minutesRepository, mock(ProjectRepository.class), mock(ClaudeService.class),
+                minutesRepository, mock(ProjectRepository.class), mock(ProjectMemberRepository.class), mock(ClaudeService.class),
                 mock(ProjectTodoService.class), mock(TodoProgressSyncService.class));
 
         MinutesResponse response = service.findById("minutes-id").orElseThrow();
@@ -45,7 +52,7 @@ class MinutesServiceTest {
         Project project = Project.builder().status(ProjectStatus.ENDED).build();
         when(projectRepository.findById("project-id")).thenReturn(Optional.of(project));
         MinutesService service = new MinutesService(
-                minutesRepository, projectRepository, claudeService,
+                minutesRepository, projectRepository, mock(ProjectMemberRepository.class), claudeService,
                 mock(ProjectTodoService.class), mock(TodoProgressSyncService.class));
 
         MinutesRequest request = new MinutesRequest();
@@ -53,7 +60,8 @@ class MinutesServiceTest {
         request.setRawText("conversation");
 
         assertThatThrownBy(() -> service.create("project-id", request))
-                .isInstanceOf(IllegalStateException.class);
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("409");
         verifyNoInteractions(claudeService);
         verify(minutesRepository, never()).save(any());
     }

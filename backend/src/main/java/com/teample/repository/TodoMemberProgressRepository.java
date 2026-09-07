@@ -8,6 +8,7 @@ import java.util.Optional;
 
 public interface TodoMemberProgressRepository extends JpaRepository<TodoMemberProgress, String> {
     List<TodoMemberProgress> findByProjectIdAndAssignedTrue(String projectId);
+    boolean existsByProjectId(String projectId);
     List<TodoMemberProgress> findByProjectIdAndUserIdAndAssignedTrue(String projectId, String userId);
     List<TodoMemberProgress> findByUserIdAndAssignedTrue(String userId);
     List<TodoMemberProgress> findByTodoId(String todoId);

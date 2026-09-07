@@ -268,6 +268,21 @@ class DashboardServiceTest {
         assertThat(dashboard.getUserId()).isEqualTo("alice");
         assertThat(dashboard.getTodos()).hasSize(1);
     }
+    @Test
+    void jwtDashboardSkipsSyncWhenProgressRowsAlreadyExist() {
+        AuthenticatedUser user = new AuthenticatedUser("supabase-user-id", "alice", "alice@example.com");
+        when(projectRepository.findById("project-1")).thenReturn(Optional.of(project));
+        when(todoMemberProgressRepository.existsByProjectId("project-1")).thenReturn(true);
+        when(todoMemberProgressRepository.findByProjectIdAndUserIdAndAssignedTrue("project-1", "alice"))
+                .thenReturn(List.of(aliceProgress));
+
+        MyProjectDashboardResponse dashboard = dashboardService.findMyProjectDashboard("project-1", user, false)
+                .orElseThrow();
+
+        verify(todoProgressSyncService, never()).syncProject(project);
+        assertThat(dashboard.getTodos()).hasSize(1);
+    }
+
     private TodoMemberProgress progress(String id, String userId, boolean completed, ProjectTodo todo) {
         TodoMemberProgress progress = TodoMemberProgress.builder()
                 .id(id)

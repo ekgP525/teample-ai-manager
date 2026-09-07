@@ -13,9 +13,14 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.Optional;
 
 @Service
 public class ClaudeService {
+
+    private static final long MAX_OUTPUT_TOKENS = 8192L;
+    private static final String MAX_TOKENS_STOP_REASON = "max_tokens";
 
     @Value("${anthropic.api-key:}")
     private String apiKey;
@@ -37,7 +42,7 @@ public class ClaudeService {
 
         MessageCreateParams params = MessageCreateParams.builder()
                 .model(Model.CLAUDE_SONNET_4_5)
-                .maxTokens(2048L)
+                .maxTokens(MAX_OUTPUT_TOKENS)
                 .addUserMessage(prompt)
                 .build();
 
@@ -52,8 +57,31 @@ public class ClaudeService {
         if (responseText.isBlank()) {
             throw new RuntimeException("Claude 응답이 비어있습니다.");
         }
+        if (isMaxTokensStopReason(message)) {
+            throw new RuntimeException("Claude 응답이 최대 토큰 제한에 도달해 잘렸습니다. 대화 내용을 줄여 다시 시도해 주세요.");
+        }
 
         return parseResponse(responseText);
+    }
+
+    private boolean isMaxTokensStopReason(Message message) {
+        Object stopReason = message.stopReason();
+        if (stopReason instanceof Optional<?> optional) {
+            stopReason = optional.orElse(null);
+        }
+        return MAX_TOKENS_STOP_REASON.equals(normalizeStopReason(stopReason));
+    }
+
+    private String normalizeStopReason(Object stopReason) {
+        if (stopReason == null) {
+            return "";
+        }
+        try {
+            Object value = stopReason.getClass().getMethod("asString").invoke(stopReason);
+            return String.valueOf(value).trim().toLowerCase(Locale.ROOT);
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            return String.valueOf(stopReason).trim().toLowerCase(Locale.ROOT);
+        }
     }
 
     private String buildPrompt(String rawText, String subject, List<String> members) {

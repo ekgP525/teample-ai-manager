@@ -8,4 +8,6 @@ import java.util.List;
 
 public interface ProjectRepository extends JpaRepository<Project, String> {
     List<Project> findByStatus(ProjectStatus status);
+
+    List<Project> findByStatusNot(ProjectStatus status);
 }

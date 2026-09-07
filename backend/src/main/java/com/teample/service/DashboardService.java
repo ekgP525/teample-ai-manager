@@ -64,11 +64,9 @@ public class DashboardService {
             return List.of();
         }
 
-        return projectRepository.findAll().stream()
-                .filter(Project::isVisibleInActiveList)
-                .filter(project -> projectMemberService.canAccessProject(project, user, admin))
+        return findAccessibleVisibleProjects(user, admin).stream()
                 .map(project -> {
-                    todoProgressSyncService.syncProject(project);
+                    syncProjectIfDashboardRowsMissing(project);
                     return buildMyProjectDashboard(project, resolvedUserId);
                 })
                 .filter(dashboard -> dashboard.getTotalTodoCount() > 0)
@@ -84,7 +82,7 @@ public class DashboardService {
 
         return projectRepository.findById(projectId).map(project -> {
             projectMemberService.ensureProjectMember(project, user, admin);
-            todoProgressSyncService.syncProject(project);
+            syncProjectIfDashboardRowsMissing(project);
             return buildMyProjectDashboard(project, resolvedUserId);
         });
     }
@@ -98,7 +96,7 @@ public class DashboardService {
 
         return projectRepository.findById(projectId).map(project -> {
             projectMemberService.ensureProjectMember(project, user, admin);
-            todoProgressSyncService.syncProject(project);
+            syncProjectIfDashboardRowsMissing(project);
             return buildTeamProjectDashboard(project);
         });
     }
@@ -119,7 +117,7 @@ public class DashboardService {
 
         return projectRepository.findById(projectId).map(project -> {
             projectMemberService.ensureProjectMember(project, user, admin);
-            todoProgressSyncService.syncProject(project);
+            syncProjectIfDashboardRowsMissing(project);
             TeamProjectDashboardResponse teamDashboard = buildTeamProjectDashboard(project);
             List<DashboardMemberResponse> members = teamDashboard.getMembers().stream()
                     .map(this::toLegacyMemberResponse)
@@ -189,7 +187,7 @@ public class DashboardService {
                 .filter(Project::isVisibleInActiveList)
                 .filter(project -> isProjectMember(project, resolvedUserId))
                 .map(project -> {
-                    todoProgressSyncService.syncProject(project);
+                    syncProjectIfDashboardRowsMissing(project);
                     return buildMyProjectDashboard(project, resolvedUserId);
                 })
                 .filter(dashboard -> dashboard.getTotalTodoCount() > 0)
@@ -205,7 +203,7 @@ public class DashboardService {
 
         return projectRepository.findById(projectId).map(project -> {
             ensureProjectMember(project, resolvedUserId);
-            todoProgressSyncService.syncProject(project);
+            syncProjectIfDashboardRowsMissing(project);
             return buildMyProjectDashboard(project, resolvedUserId);
         });
     }
@@ -219,7 +217,7 @@ public class DashboardService {
 
         return projectRepository.findById(projectId).map(project -> {
             ensureProjectMember(project, resolvedUserId);
-            todoProgressSyncService.syncProject(project);
+            syncProjectIfDashboardRowsMissing(project);
             return buildTeamProjectDashboard(project);
         });
     }
@@ -267,7 +265,7 @@ public class DashboardService {
 
         return projectRepository.findById(projectId).map(project -> {
             ensureProjectMember(project, resolvedUserId);
-            todoProgressSyncService.syncProject(project);
+            syncProjectIfDashboardRowsMissing(project);
             TeamProjectDashboardResponse teamDashboard = buildTeamProjectDashboard(project);
             List<DashboardMemberResponse> members = teamDashboard.getMembers().stream()
                     .map(this::toLegacyMemberResponse)
@@ -284,6 +282,39 @@ public class DashboardService {
                     .teamMembers(members)
                     .build();
         });
+    }
+
+    private List<Project> findAccessibleVisibleProjects(AuthenticatedUser user, boolean admin) {
+        if (admin) {
+            return projectRepository.findByStatusNot(ProjectStatus.DELETED).stream()
+                    .filter(Project::isVisibleInActiveList)
+                    .toList();
+        }
+        if (user == null) {
+            return List.of();
+        }
+
+        Map<String, Project> projectsById = new LinkedHashMap<>();
+        projectMemberRepository.findByUserIdOrderByJoinedAtAsc(user.authUserId()).stream()
+                .map(ProjectMember::getProject)
+                .filter(project -> project != null && project.getId() != null)
+                .filter(Project::isVisibleInActiveList)
+                .forEach(project -> projectsById.putIfAbsent(project.getId(), project));
+
+        projectRepository.findAll().stream()
+                .filter(Project::isVisibleInActiveList)
+                .filter(project -> project.getId() != null && !projectsById.containsKey(project.getId()))
+                .filter(project -> !projectMemberRepository.existsByProjectId(project.getId()))
+                .filter(project -> projectMemberService.canAccessProject(project, user, false))
+                .forEach(project -> projectsById.putIfAbsent(project.getId(), project));
+
+        return new ArrayList<>(projectsById.values());
+    }
+
+    private void syncProjectIfDashboardRowsMissing(Project project) {
+        if (project.getId() != null && !todoMemberProgressRepository.existsByProjectId(project.getId())) {
+            todoProgressSyncService.syncProject(project);
+        }
     }
 
     private MyProjectDashboardResponse buildMyProjectDashboard(Project project, String userId) {
