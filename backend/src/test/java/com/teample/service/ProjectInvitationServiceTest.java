@@ -57,6 +57,26 @@ class ProjectInvitationServiceTest {
     }
 
     @Test
+    void findActiveReturnsCurrentActiveInvitationForOwner() {
+        AuthenticatedUser owner = new AuthenticatedUser("owner-id", "owner", "owner@example.com");
+        ProjectInvitation invitation = ProjectInvitation.builder()
+                .projectId("project-id")
+                .code("ABC123")
+                .active(true)
+                .expiresAt(LocalDateTime.now().plusHours(1))
+                .build();
+        when(invitationRepository.findFirstByProjectIdAndActiveTrueAndExpiresAtAfterOrderByCreatedAtDesc(
+                org.mockito.Mockito.eq("project-id"), org.mockito.ArgumentMatchers.any(LocalDateTime.class)))
+                .thenReturn(Optional.of(invitation));
+
+        ProjectInvitationResponse response = service.findActive("project-id", owner, false);
+
+        verify(projectMemberService).ensureProjectOwner("project-id", owner, false);
+        assertThat(response.code()).isEqualTo("ABC123");
+        assertThat(response.expiresAt()).isEqualTo(invitation.getExpiresAt());
+    }
+
+    @Test
     void joinAddsJwtSubjectAsMemberAndReturnsProject() {
         Project project = Project.builder().id("project-id").name("Project").build();
         ProjectInvitation invitation = ProjectInvitation.builder()

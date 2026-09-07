@@ -102,7 +102,7 @@ class ProjectServiceTest {
     }
 
     @Test
-    void createMarksProjectWithFutureEndDateAsScheduled() {
+    void createMarksProjectWithEndDateWithinSevenDaysAsScheduled() {
         ProjectRequest request = new ProjectRequest();
         request.setName("scheduled");
         request.setMembers(List.of("member"));
@@ -113,6 +113,22 @@ class ProjectServiceTest {
         ProjectResponse response = service.create(request);
 
         assertThat(response.getStatus()).isEqualTo("DISPOSAL_SCHEDULED");
+        assertThat(response.getEndDate()).isEqualTo(request.getEndDate());
+        assertThat(response.getDisposalDeadline()).isEqualTo(request.getEndDate());
+    }
+
+    @Test
+    void createKeepsProjectActiveWhenEndDateIsMoreThanSevenDaysAway() {
+        ProjectRequest request = new ProjectRequest();
+        request.setName("active future");
+        request.setMembers(List.of("member"));
+        request.setEndDate(LocalDate.now().plusDays(8));
+        when(projectRepository.save(any(Project.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        ProjectResponse response = service.create(request);
+
+        assertThat(response.getStatus()).isEqualTo("ACTIVE");
         assertThat(response.getEndDate()).isEqualTo(request.getEndDate());
         assertThat(response.getDisposalDeadline()).isEqualTo(request.getEndDate());
     }
@@ -214,7 +230,7 @@ class ProjectServiceTest {
     }
 
     @Test
-    void restoreScheduledProjectRecalculatesEndScheduledStatus() {
+    void restoreProjectWithEndDateWithinSevenDaysRecalculatesEndScheduledStatus() {
         LocalDate today = LocalDate.of(2026, 8, 17);
         LocalDateTime now = LocalDateTime.of(2026, 8, 17, 10, 0);
         Project project = Project.builder()
@@ -227,6 +243,23 @@ class ProjectServiceTest {
 
         assertThat(project.getDeletedAt()).isNull();
         assertThat(project.getStatus()).isEqualTo(ProjectStatus.END_SCHEDULED);
+        assertThat(project.isDeleted()).isFalse();
+    }
+
+    @Test
+    void restoreProjectWithEndDateMoreThanSevenDaysAwayRecalculatesActiveStatus() {
+        LocalDate today = LocalDate.of(2026, 8, 17);
+        LocalDateTime now = LocalDateTime.of(2026, 8, 17, 10, 0);
+        Project project = Project.builder()
+                .status(ProjectStatus.DELETED)
+                .endDate(today.plusDays(8))
+                .deletedAt(now.minusDays(1))
+                .build();
+
+        project.restore(today, now);
+
+        assertThat(project.getDeletedAt()).isNull();
+        assertThat(project.getStatus()).isEqualTo(ProjectStatus.ACTIVE);
         assertThat(project.isDeleted()).isFalse();
     }
 

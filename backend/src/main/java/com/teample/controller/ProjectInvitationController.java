@@ -13,6 +13,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -29,6 +30,12 @@ public class ProjectInvitationController {
     public ResponseEntity<ProjectInvitationResponse> createInvitation(
             @PathVariable String projectId, HttpServletRequest request) {
         return ResponseEntity.ok(invitationService.create(projectId, authenticatedUser(request), isAdmin(request)));
+    }
+
+    @GetMapping("/api/projects/{projectId}/invitations/active")
+    public ResponseEntity<ProjectInvitationResponse> getActiveInvitation(
+            @PathVariable String projectId, HttpServletRequest request) {
+        return ResponseEntity.ok(invitationService.findActive(projectId, authenticatedUser(request), isAdmin(request)));
     }
 
     @PostMapping("/api/project-invitations/join")
