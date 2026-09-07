@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { ApiError } from "@/lib/api/client";
 import {
   createProjectInvitation,
+  getActiveProjectInvitation,
   type ProjectInvitation,
 } from "@/lib/api/invitations";
 
@@ -21,6 +22,7 @@ export function ProjectInviteDialog({
   onClose,
 }: ProjectInviteDialogProps) {
   const [invitation, setInvitation] = useState<ProjectInvitation | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState("");
   const [copiedValue, setCopiedValue] = useState<CopiedValue>(null);
@@ -37,6 +39,26 @@ export function ProjectInviteDialog({
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [onClose]);
 
+  useEffect(() => {
+    const controller = new AbortController();
+
+    getActiveProjectInvitation(projectId, { signal: controller.signal })
+      .then((activeInvitation) => {
+        setInvitation(activeInvitation);
+        setIsLoading(false);
+      })
+      .catch((requestError: unknown) => {
+        if (controller.signal.aborted) return;
+        // 404는 아직 발급된 활성 코드가 없다는 뜻이므로 생성 화면을 보여줍니다.
+        if (!(requestError instanceof ApiError && requestError.status === 404)) {
+          setError(getInvitationErrorMessage(requestError, "load"));
+        }
+        setIsLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [projectId]);
+
   const createInvitation = async () => {
     setIsCreating(true);
     setError("");
@@ -45,8 +67,7 @@ export function ProjectInviteDialog({
     try {
       setInvitation(await createProjectInvitation(projectId));
     } catch (requestError) {
-      setInvitation(null);
-      setError(getInvitationErrorMessage(requestError));
+      setError(getInvitationErrorMessage(requestError, "create"));
     } finally {
       setIsCreating(false);
     }
@@ -99,7 +120,23 @@ export function ProjectInviteDialog({
         </header>
 
         <div className="p-5">
-          {invitation ? (
+          {error && (
+            <p
+              role="alert"
+              className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm leading-5 text-red-600 dark:bg-red-950 dark:text-red-400"
+            >
+              {error}
+            </p>
+          )}
+
+          {isLoading ? (
+            <p
+              role="status"
+              className="py-6 text-center text-sm text-zinc-500"
+            >
+              초대 코드를 확인하는 중...
+            </p>
+          ) : invitation ? (
             <div className="space-y-5">
               <div>
                 <p className="text-sm font-medium">초대 코드</p>
@@ -138,14 +175,19 @@ export function ProjectInviteDialog({
                 코드를 받은 팀원은 로그인 후 프로젝트에 참여할 수 있습니다.
               </p>
 
-              <button
-                type="button"
-                onClick={() => void createInvitation()}
-                disabled={isCreating}
-                className="w-full rounded-lg border border-zinc-300 px-4 py-2.5 text-sm font-medium transition-colors hover:bg-zinc-100 disabled:cursor-wait disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
-              >
-                {isCreating ? "새 코드 만드는 중..." : "새 초대 코드 만들기"}
-              </button>
+              <div>
+                <button
+                  type="button"
+                  onClick={() => void createInvitation()}
+                  disabled={isCreating}
+                  className="w-full rounded-lg border border-zinc-300 px-4 py-2.5 text-sm font-medium transition-colors hover:bg-zinc-100 disabled:cursor-wait disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
+                >
+                  {isCreating ? "새 코드 만드는 중..." : "새 초대 코드 만들기"}
+                </button>
+                <p className="mt-2 text-xs leading-5 text-zinc-500">
+                  새 코드를 만들면 지금 코드는 더 이상 사용할 수 없습니다.
+                </p>
+              </div>
             </div>
           ) : (
             <div>
@@ -156,15 +198,6 @@ export function ProjectInviteDialog({
               <p className="mt-1 text-sm leading-6 text-zinc-500">
                 초대 코드나 링크를 전달하면 팀원이 로그인한 뒤 이 프로젝트에 참여할 수 있습니다.
               </p>
-
-              {error && (
-                <p
-                  role="alert"
-                  className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm leading-5 text-red-600 dark:bg-red-950 dark:text-red-400"
-                >
-                  {error}
-                </p>
-              )}
 
               <button
                 type="button"
@@ -182,15 +215,16 @@ export function ProjectInviteDialog({
   );
 }
 
-function getInvitationErrorMessage(error: unknown) {
+function getInvitationErrorMessage(error: unknown, action: "load" | "create") {
   if (error instanceof ApiError) {
     if (error.status === 401) return "로그인이 만료되었습니다. 다시 로그인해 주세요.";
     if (error.status === 403) return "프로젝트 소유자만 팀원을 초대할 수 있습니다.";
     if (error.status === 404) return "프로젝트를 찾을 수 없습니다. 삭제되었거나 접근할 수 없는 프로젝트입니다.";
   }
 
-  return error instanceof Error
-    ? error.message
+  if (error instanceof Error) return error.message;
+  return action === "load"
+    ? "초대 코드를 불러오지 못했습니다."
     : "초대 코드를 생성하지 못했습니다.";
 }
 
