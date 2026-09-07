@@ -184,11 +184,9 @@ export function ProjectInviteDialog({
 
 function getInvitationErrorMessage(error: unknown) {
   if (error instanceof ApiError) {
-    if (error.status === 404 || error.status === 405) {
-      return "초대 API가 아직 연결되지 않았습니다. 백엔드 구현 후 바로 사용할 수 있습니다.";
-    }
-    if (error.status === 401) return "로그인 정보를 다시 확인해 주세요.";
-    if (error.status === 403) return "프로젝트 관리자만 팀원을 초대할 수 있습니다.";
+    if (error.status === 401) return "로그인이 만료되었습니다. 다시 로그인해 주세요.";
+    if (error.status === 403) return "프로젝트 소유자만 팀원을 초대할 수 있습니다.";
+    if (error.status === 404) return "프로젝트를 찾을 수 없습니다. 삭제되었거나 접근할 수 없는 프로젝트입니다.";
   }
 
   return error instanceof Error
