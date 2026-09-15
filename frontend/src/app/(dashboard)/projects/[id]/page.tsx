@@ -12,7 +12,9 @@ import {
   deleteProject,
   getProject,
   getProjectMembers,
+  leaveProject,
   permanentlyDeleteProject,
+  removeProjectMember,
   restoreProject,
   type ProjectMember,
 } from "@/lib/api/projects";
@@ -48,6 +50,11 @@ export default function ProjectDetailPage() {
   const [confirmPermanentDelete, setConfirmPermanentDelete] = useState(false);
   const [isPermanentlyDeleting, setIsPermanentlyDeleting] = useState(false);
   const [isInviteDialogOpen, setIsInviteDialogOpen] = useState(false);
+  const [memberToRemove, setMemberToRemove] = useState<ProjectMember | null>(null);
+  const [isRemovingMember, setIsRemovingMember] = useState(false);
+  const [confirmLeave, setConfirmLeave] = useState(false);
+  const [isLeaving, setIsLeaving] = useState(false);
+  const [memberActionError, setMemberActionError] = useState("");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -179,6 +186,49 @@ export default function ProjectDetailPage() {
     }
   };
 
+  const handleRemoveMember = async () => {
+    if (!memberToRemove) return;
+
+    setIsRemovingMember(true);
+    setMemberActionError("");
+
+    try {
+      await removeProjectMember(id, memberToRemove.userId);
+      const [updatedProject, updatedMembers] = await Promise.all([
+        getProject(id),
+        getProjectMembers(id),
+      ]);
+      setProject(updatedProject);
+      setAccountMembers(updatedMembers);
+      setMemberToRemove(null);
+    } catch (error) {
+      setMemberActionError(
+        error instanceof Error
+          ? error.message
+          : "프로젝트에서 멤버를 제외하지 못했습니다."
+      );
+    } finally {
+      setIsRemovingMember(false);
+    }
+  };
+
+  const handleLeaveProject = async () => {
+    setIsLeaving(true);
+    setMemberActionError("");
+
+    try {
+      await leaveProject(id);
+      router.push("/projects");
+    } catch (error) {
+      setMemberActionError(
+        error instanceof Error
+          ? error.message
+          : "프로젝트에서 나가지 못했습니다."
+      );
+      setIsLeaving(false);
+    }
+  };
+
   const pageIsLoading = isLoading || loadedProjectId !== id;
 
   if (pageIsLoading) {
@@ -240,6 +290,11 @@ export default function ProjectDetailPage() {
       (member) =>
         member.userId === currentAuthUserId && member.role === "OWNER"
     );
+  const currentMembership = accountMembers.find(
+    (member) => member.userId === currentAuthUserId
+  );
+  const canLeaveProject =
+    !isDeletedProject && currentMembership?.role === "MEMBER";
   const endDate = project.endDate ?? project.disposalDeadline;
   const endedAt = project.endedAt ?? project.disposedAt;
   const memberSummary = hasAccountMembers
@@ -294,6 +349,18 @@ export default function ProjectDetailPage() {
               >
                 새 회의록
               </Link>
+            )}
+            {canLeaveProject && !confirmLeave && (
+              <button
+                type="button"
+                onClick={() => {
+                  setConfirmLeave(true);
+                  setMemberActionError("");
+                }}
+                className="rounded-lg border border-red-300 px-3 py-2 text-sm text-red-500 transition-colors hover:bg-red-50 dark:border-red-800 dark:hover:bg-red-950"
+              >
+                프로젝트 나가기
+              </button>
             )}
             {!isDeletedProject && canManageProject && (!confirmDelete ? (
               <button
@@ -385,6 +452,44 @@ export default function ProjectDetailPage() {
           </p>
         )}
 
+        {memberActionError && (
+          <p
+            role="alert"
+            className="mb-6 rounded-lg bg-red-50 px-4 py-2.5 text-sm text-red-600 dark:bg-red-950 dark:text-red-400"
+          >
+            {memberActionError}
+          </p>
+        )}
+
+        {confirmLeave && (
+          <section className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4 dark:border-red-900 dark:bg-red-950">
+            <h2 className="font-semibold text-red-700 dark:text-red-300">
+              프로젝트에서 나가시겠습니까?
+            </h2>
+            <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+              프로젝트에서 나가면 더 이상 프로젝트와 회의록, 업무 정보를 볼 수 없습니다. 기존 활동 기록은 유지됩니다.
+            </p>
+            <div className="mt-4 flex gap-2">
+              <button
+                type="button"
+                onClick={() => void handleLeaveProject()}
+                disabled={isLeaving}
+                className="rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-wait disabled:opacity-50"
+              >
+                {isLeaving ? "처리 중..." : "나가기 확인"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmLeave(false)}
+                disabled={isLeaving}
+                className="rounded-lg border border-zinc-300 px-3 py-2 text-sm hover:bg-white disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
+              >
+                취소
+              </button>
+            </div>
+          </section>
+        )}
+
         {confirmPermanentDelete && (
           <p className="mb-6 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
             영구 삭제하면 프로젝트의 회의록과 업무도 함께 삭제되며 되돌릴 수 없습니다.
@@ -403,6 +508,72 @@ export default function ProjectDetailPage() {
             삭제된 프로젝트입니다
             {project.deletedAt ? ` (${project.deletedAt.slice(0, 10)})` : ""}. 복원하기 전까지 기존 자료는 읽기 전용으로 표시됩니다.
           </p>
+        )}
+
+        {hasAccountMembers && (
+          <section className="mb-8">
+            <h2 className="mb-3 text-lg font-semibold">프로젝트 멤버</h2>
+            <div className="space-y-2">
+              {accountMembers.map((member) => (
+                <div
+                  key={member.userId}
+                  className="flex items-center justify-between gap-4 rounded-lg border border-zinc-200 p-3 dark:border-zinc-700"
+                >
+                  <div className="min-w-0">
+                    <p className="break-words font-medium">
+                      {member.displayName}
+                      {member.userId === currentAuthUserId ? " (나)" : ""}
+                    </p>
+                    <p className="mt-0.5 text-xs text-zinc-500">
+                      {member.role === "OWNER" ? "OWNER" : "MEMBER"}
+                    </p>
+                  </div>
+                  {canManageProject && member.role === "MEMBER" && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMemberToRemove(member);
+                        setMemberActionError("");
+                      }}
+                      disabled={isRemovingMember || isLeaving}
+                      className="shrink-0 rounded-lg border border-red-300 px-3 py-1.5 text-sm text-red-600 transition-colors hover:bg-red-50 disabled:opacity-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950"
+                    >
+                      멤버 제외
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {memberToRemove && (
+          <section className="mb-8 rounded-lg border border-red-200 bg-red-50 p-4 dark:border-red-900 dark:bg-red-950">
+            <h2 className="font-semibold text-red-700 dark:text-red-300">
+              {memberToRemove.displayName}님을 프로젝트에서 제외하시겠습니까?
+            </h2>
+            <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+              제외된 멤버는 더 이상 이 프로젝트에 접근할 수 없습니다. 기존 회의록과 업무 기록은 유지됩니다.
+            </p>
+            <div className="mt-4 flex gap-2">
+              <button
+                type="button"
+                onClick={() => void handleRemoveMember()}
+                disabled={isRemovingMember}
+                className="rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-wait disabled:opacity-50"
+              >
+                {isRemovingMember ? "제외 중..." : "제외 확인"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setMemberToRemove(null)}
+                disabled={isRemovingMember}
+                className="rounded-lg border border-zinc-300 px-3 py-2 text-sm hover:bg-white disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
+              >
+                취소
+              </button>
+            </div>
+          </section>
         )}
 
         <ProjectTodoBoard

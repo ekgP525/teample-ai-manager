@@ -144,6 +144,25 @@ class SupabaseAuthenticationFilterTest {
     }
 
     @Test
+    void protectsProjectMemberRemovalRequests() throws Exception {
+        SupabaseAuthService authService = mock(SupabaseAuthService.class);
+        AdminTestAuthService adminTestAuthService = mock(AdminTestAuthService.class);
+        SupabaseAuthenticationFilter filter = new SupabaseAuthenticationFilter(authService, adminTestAuthService);
+        MockHttpServletRequest request = new MockHttpServletRequest(
+                "DELETE", "/api/projects/project-1/members/member-1");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        FilterChain filterChain = mock(FilterChain.class);
+        AuthenticatedUser user = new AuthenticatedUser("auth-user-1", "minjae", "minjae@example.com");
+
+        when(authService.authenticate(request)).thenReturn(user);
+
+        filter.doFilter(request, response, filterChain);
+
+        assertThat(request.getAttribute(SupabaseAuthenticationFilter.AUTH_USER_ID_ATTRIBUTE)).isEqualTo("auth-user-1");
+        verify(filterChain).doFilter(request, response);
+    }
+
+    @Test
     void protectsProjectListRequests() throws Exception {
         SupabaseAuthService authService = mock(SupabaseAuthService.class);
         AdminTestAuthService adminTestAuthService = mock(AdminTestAuthService.class);

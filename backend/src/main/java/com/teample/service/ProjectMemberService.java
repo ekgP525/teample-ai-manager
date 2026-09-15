@@ -6,6 +6,7 @@ import com.teample.entity.ProjectMember;
 import com.teample.entity.ProjectMemberRole;
 import com.teample.repository.ProjectMemberRepository;
 import com.teample.repository.ProjectRepository;
+import com.teample.repository.TodoMemberProgressRepository;
 import com.teample.security.AuthenticatedUser;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -21,6 +22,7 @@ public class ProjectMemberService {
 
     private final ProjectMemberRepository projectMemberRepository;
     private final ProjectRepository projectRepository;
+    private final TodoMemberProgressRepository todoMemberProgressRepository;
 
     @Transactional
     public void addOwner(Project project, AuthenticatedUser user) {
@@ -53,6 +55,48 @@ public class ProjectMemberService {
         return Optional.of(projectMemberRepository.findByProjectIdOrderByJoinedAtAsc(projectId).stream()
                 .map(ProjectMemberResponse::from)
                 .toList());
+    }
+
+    @Transactional
+    public void removeMember(
+            String projectId,
+            String targetUserId,
+            AuthenticatedUser requester,
+            boolean admin
+    ) {
+        Project project = requireAccountManagedProject(projectId);
+        ensureProjectOwner(project, requester, admin);
+
+        ProjectMember target = projectMemberRepository.findByProjectIdAndUserId(projectId, targetUserId)
+                .orElseThrow(() -> new ProjectMemberNotFoundException("Project member not found."));
+        if (requester != null && target.getUserId().equals(requester.authUserId())) {
+            throw new ProjectMemberConflictException("Use the leave project action to remove your own membership.");
+        }
+        if (target.getRole() == ProjectMemberRole.OWNER) {
+            throw new ProjectMemberConflictException("Project owners cannot be removed.");
+        }
+
+        deactivateTodoProgress(projectId, target);
+        projectMemberRepository.deleteByProjectIdAndUserId(projectId, target.getUserId());
+    }
+
+    @Transactional
+    public void leaveProject(String projectId, AuthenticatedUser user) {
+        Project project = requireAccountManagedProject(projectId);
+        if (user == null) {
+            throw new ProjectMemberNotFoundException("Project membership not found.");
+        }
+
+        ProjectMember membership = projectMemberRepository.findByProjectIdAndUserId(projectId, user.authUserId())
+                .orElseThrow(() -> new ProjectMemberNotFoundException("Project membership not found."));
+        if (membership.getRole() == ProjectMemberRole.OWNER) {
+            throw new ProjectMemberConflictException(
+                    "Project owner cannot leave the project. Delete the project or transfer ownership first."
+            );
+        }
+
+        deactivateTodoProgress(projectId, membership);
+        projectMemberRepository.deleteByProjectIdAndUserId(projectId, membership.getUserId());
     }
 
     @Transactional(readOnly = true)
@@ -136,6 +180,22 @@ public class ProjectMemberService {
                 .anyMatch(member -> member != null && candidates.stream().anyMatch(member::equalsIgnoreCase));
     }
 
+    private Project requireAccountManagedProject(String projectId) {
+        Project project = projectRepository.findById(projectId)
+                .orElseThrow(() -> new ProjectNotFoundException("Project not found."));
+        if (!projectMemberRepository.existsByProjectId(projectId)) {
+            throw new ProjectMemberConflictException(
+                    "Member management is unavailable for legacy projects without account memberships."
+            );
+        }
+        return project;
+    }
+
+    private void deactivateTodoProgress(String projectId, ProjectMember member) {
+        todoMemberProgressRepository.findByProjectIdAndUserId(projectId, member.getDisplayName())
+                .forEach(progress -> progress.setAssigned(false));
+    }
+
     private String resolveDisplayName(AuthenticatedUser user) {
         if (user.memberKey() != null && !user.memberKey().isBlank()) {
             return user.memberKey().trim();
@@ -158,6 +218,18 @@ public class ProjectMemberService {
 
     public static class ProjectNotFoundException extends RuntimeException {
         public ProjectNotFoundException(String message) {
+            super(message);
+        }
+    }
+
+    public static class ProjectMemberNotFoundException extends RuntimeException {
+        public ProjectMemberNotFoundException(String message) {
+            super(message);
+        }
+    }
+
+    public static class ProjectMemberConflictException extends RuntimeException {
+        public ProjectMemberConflictException(String message) {
             super(message);
         }
     }

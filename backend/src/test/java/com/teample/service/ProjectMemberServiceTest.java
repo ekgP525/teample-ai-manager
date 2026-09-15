@@ -4,8 +4,10 @@ import com.teample.dto.project.ProjectMemberResponse;
 import com.teample.entity.Project;
 import com.teample.entity.ProjectMember;
 import com.teample.entity.ProjectMemberRole;
+import com.teample.entity.TodoMemberProgress;
 import com.teample.repository.ProjectMemberRepository;
 import com.teample.repository.ProjectRepository;
+import com.teample.repository.TodoMemberProgressRepository;
 import com.teample.security.AuthenticatedUser;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -33,11 +35,15 @@ class ProjectMemberServiceTest {
     @Mock
     private ProjectRepository projectRepository;
 
+    @Mock
+    private TodoMemberProgressRepository todoMemberProgressRepository;
+
     private ProjectMemberService service;
 
     @BeforeEach
     void setUp() {
-        service = new ProjectMemberService(projectMemberRepository, projectRepository);
+        service = new ProjectMemberService(
+                projectMemberRepository, projectRepository, todoMemberProgressRepository);
     }
 
     @Test
@@ -157,5 +163,170 @@ class ProjectMemberServiceTest {
         Optional<List<ProjectMemberResponse>> response = service.findProjectMembers("missing-id", user, false);
 
         assertThat(response).isEmpty();
+    }
+
+    @Test
+    void ownerRemovesMemberAndDeactivatesExistingProgress() {
+        Project project = Project.builder().id("project-id").name("project").build();
+        AuthenticatedUser owner = new AuthenticatedUser("owner-id", "owner", "owner@example.com");
+        ProjectMember target = member(project, "member-id", "member", ProjectMemberRole.MEMBER);
+        TodoMemberProgress progress = TodoMemberProgress.builder().assigned(true).build();
+        when(projectRepository.findById("project-id")).thenReturn(Optional.of(project));
+        when(projectMemberRepository.existsByProjectId("project-id")).thenReturn(true);
+        when(projectMemberRepository.existsByProjectIdAndUserIdAndRole(
+                "project-id", "owner-id", ProjectMemberRole.OWNER)).thenReturn(true);
+        when(projectMemberRepository.findByProjectIdAndUserId("project-id", "member-id"))
+                .thenReturn(Optional.of(target));
+        when(todoMemberProgressRepository.findByProjectIdAndUserId("project-id", "member"))
+                .thenReturn(List.of(progress));
+
+        service.removeMember("project-id", "member-id", owner, false);
+
+        assertThat(progress.getAssigned()).isFalse();
+        verify(projectMemberRepository).deleteByProjectIdAndUserId("project-id", "member-id");
+    }
+
+    @Test
+    void memberCannotRemoveAnotherMember() {
+        Project project = Project.builder().id("project-id").build();
+        AuthenticatedUser member = new AuthenticatedUser("member-id", "member", null);
+        when(projectRepository.findById("project-id")).thenReturn(Optional.of(project));
+        when(projectMemberRepository.existsByProjectId("project-id")).thenReturn(true);
+        when(projectMemberRepository.existsByProjectIdAndUserIdAndRole(
+                "project-id", "member-id", ProjectMemberRole.OWNER)).thenReturn(false);
+
+        assertThatThrownBy(() -> service.removeMember("project-id", "other-id", member, false))
+                .isInstanceOf(ProjectMemberService.ProjectMemberAccessDeniedException.class);
+
+        verify(projectMemberRepository, never()).deleteByProjectIdAndUserId("project-id", "other-id");
+    }
+
+    @Test
+    void ownerCannotRemoveOwner() {
+        Project project = Project.builder().id("project-id").build();
+        AuthenticatedUser owner = new AuthenticatedUser("owner-id", "owner", null);
+        ProjectMember otherOwner = member(project, "other-owner-id", "other", ProjectMemberRole.OWNER);
+        stubOwnerRemoval(project, owner, otherOwner);
+
+        assertThatThrownBy(() -> service.removeMember("project-id", "other-owner-id", owner, false))
+                .isInstanceOf(ProjectMemberService.ProjectMemberConflictException.class)
+                .hasMessage("Project owners cannot be removed.");
+    }
+
+    @Test
+    void ownerCannotRemoveSelfThroughMemberRemoval() {
+        Project project = Project.builder().id("project-id").build();
+        AuthenticatedUser owner = new AuthenticatedUser("owner-id", "owner", null);
+        ProjectMember ownerMembership = member(project, "owner-id", "owner", ProjectMemberRole.OWNER);
+        stubOwnerRemoval(project, owner, ownerMembership);
+
+        assertThatThrownBy(() -> service.removeMember("project-id", "owner-id", owner, false))
+                .isInstanceOf(ProjectMemberService.ProjectMemberConflictException.class)
+                .hasMessageContaining("leave project action");
+    }
+
+    @Test
+    void removeMemberRejectsMissingMember() {
+        Project project = Project.builder().id("project-id").build();
+        AuthenticatedUser owner = new AuthenticatedUser("owner-id", "owner", null);
+        when(projectRepository.findById("project-id")).thenReturn(Optional.of(project));
+        when(projectMemberRepository.existsByProjectId("project-id")).thenReturn(true);
+        when(projectMemberRepository.existsByProjectIdAndUserIdAndRole(
+                "project-id", "owner-id", ProjectMemberRole.OWNER)).thenReturn(true);
+        when(projectMemberRepository.findByProjectIdAndUserId("project-id", "missing-id"))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.removeMember("project-id", "missing-id", owner, false))
+                .isInstanceOf(ProjectMemberService.ProjectMemberNotFoundException.class);
+    }
+
+    @Test
+    void memberLeavesProjectAndDeactivatesExistingProgress() {
+        Project project = Project.builder().id("project-id").build();
+        AuthenticatedUser user = new AuthenticatedUser("member-id", "member", null);
+        ProjectMember membership = member(project, "member-id", "member", ProjectMemberRole.MEMBER);
+        TodoMemberProgress progress = TodoMemberProgress.builder().assigned(true).build();
+        when(projectRepository.findById("project-id")).thenReturn(Optional.of(project));
+        when(projectMemberRepository.existsByProjectId("project-id")).thenReturn(true);
+        when(projectMemberRepository.findByProjectIdAndUserId("project-id", "member-id"))
+                .thenReturn(Optional.of(membership));
+        when(todoMemberProgressRepository.findByProjectIdAndUserId("project-id", "member"))
+                .thenReturn(List.of(progress));
+
+        service.leaveProject("project-id", user);
+
+        assertThat(progress.getAssigned()).isFalse();
+        verify(projectMemberRepository).deleteByProjectIdAndUserId("project-id", "member-id");
+    }
+
+    @Test
+    void ownerCannotLeaveProject() {
+        Project project = Project.builder().id("project-id").build();
+        AuthenticatedUser owner = new AuthenticatedUser("owner-id", "owner", null);
+        ProjectMember membership = member(project, "owner-id", "owner", ProjectMemberRole.OWNER);
+        when(projectRepository.findById("project-id")).thenReturn(Optional.of(project));
+        when(projectMemberRepository.existsByProjectId("project-id")).thenReturn(true);
+        when(projectMemberRepository.findByProjectIdAndUserId("project-id", "owner-id"))
+                .thenReturn(Optional.of(membership));
+
+        assertThatThrownBy(() -> service.leaveProject("project-id", owner))
+                .isInstanceOf(ProjectMemberService.ProjectMemberConflictException.class)
+                .hasMessage("Project owner cannot leave the project. Delete the project or transfer ownership first.");
+    }
+
+    @Test
+    void nonMemberCannotLeaveProject() {
+        Project project = Project.builder().id("project-id").build();
+        AuthenticatedUser user = new AuthenticatedUser("other-id", "other", null);
+        when(projectRepository.findById("project-id")).thenReturn(Optional.of(project));
+        when(projectMemberRepository.existsByProjectId("project-id")).thenReturn(true);
+        when(projectMemberRepository.findByProjectIdAndUserId("project-id", "other-id"))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.leaveProject("project-id", user))
+                .isInstanceOf(ProjectMemberService.ProjectMemberNotFoundException.class);
+    }
+
+    @Test
+    void removedMemberFailsExistingMembershipCheck() {
+        Project project = Project.builder().id("project-id").build();
+        AuthenticatedUser removed = new AuthenticatedUser("removed-id", "removed", null);
+        when(projectRepository.findById("project-id")).thenReturn(Optional.of(project));
+        when(projectMemberRepository.existsByProjectIdAndUserId("project-id", "removed-id"))
+                .thenReturn(false);
+        when(projectMemberRepository.existsByProjectId("project-id")).thenReturn(true);
+
+        assertThatThrownBy(() -> service.ensureProjectMember("project-id", removed, false))
+                .isInstanceOf(ProjectMemberService.ProjectMemberAccessDeniedException.class);
+    }
+
+    @Test
+    void legacyProjectRejectsAccountMemberRemoval() {
+        Project project = Project.builder().id("legacy-id").members(List.of("owner")).build();
+        AuthenticatedUser owner = new AuthenticatedUser("owner-id", "owner", null);
+        when(projectRepository.findById("legacy-id")).thenReturn(Optional.of(project));
+        when(projectMemberRepository.existsByProjectId("legacy-id")).thenReturn(false);
+
+        assertThatThrownBy(() -> service.removeMember("legacy-id", "member-id", owner, false))
+                .isInstanceOf(ProjectMemberService.ProjectMemberConflictException.class)
+                .hasMessageContaining("legacy projects");
+    }
+
+    private void stubOwnerRemoval(Project project, AuthenticatedUser owner, ProjectMember target) {
+        when(projectRepository.findById("project-id")).thenReturn(Optional.of(project));
+        when(projectMemberRepository.existsByProjectId("project-id")).thenReturn(true);
+        when(projectMemberRepository.existsByProjectIdAndUserIdAndRole(
+                "project-id", "owner-id", ProjectMemberRole.OWNER)).thenReturn(true);
+        when(projectMemberRepository.findByProjectIdAndUserId("project-id", target.getUserId()))
+                .thenReturn(Optional.of(target));
+    }
+
+    private ProjectMember member(Project project, String userId, String displayName, ProjectMemberRole role) {
+        return ProjectMember.builder()
+                .project(project)
+                .userId(userId)
+                .displayName(displayName)
+                .role(role)
+                .build();
     }
 }

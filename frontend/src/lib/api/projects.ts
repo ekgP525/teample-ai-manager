@@ -44,6 +44,26 @@ export function getProjectMembers(projectId: string, signal?: AbortSignal) {
   );
 }
 
+export function removeProjectMember(projectId: string, userId: string) {
+  return apiRequest<void>(
+    `/api/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(userId)}`,
+    {
+      method: "DELETE",
+      errorMessage: "프로젝트에서 멤버를 제외하지 못했습니다.",
+    }
+  );
+}
+
+export function leaveProject(projectId: string) {
+  return apiRequest<void>(
+    `/api/projects/${encodeURIComponent(projectId)}/members/me`,
+    {
+      method: "DELETE",
+      errorMessage: "프로젝트에서 나가지 못했습니다.",
+    }
+  );
+}
+
 export function createProject(input: CreateProjectInput) {
   return apiRequest<Project>("/api/projects", {
     method: "POST",
