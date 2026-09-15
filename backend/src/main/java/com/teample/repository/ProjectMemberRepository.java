@@ -5,6 +5,7 @@ import com.teample.entity.ProjectMemberRole;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
+import java.util.Optional;
 
 public interface ProjectMemberRepository extends JpaRepository<ProjectMember, String> {
 
@@ -19,6 +20,10 @@ public interface ProjectMemberRepository extends JpaRepository<ProjectMember, St
     boolean existsByProjectIdAndUserIdAndRole(String projectId, String userId, ProjectMemberRole role);
 
     boolean existsByProjectIdAndRole(String projectId, ProjectMemberRole role);
+
+    Optional<ProjectMember> findByProjectIdAndUserId(String projectId, String userId);
+
+    void deleteByProjectIdAndUserId(String projectId, String userId);
 
     void deleteByProjectId(String projectId);
 }
