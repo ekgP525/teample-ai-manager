@@ -45,7 +45,7 @@ public class ProjectService {
         synchronizeStatus(project);
         Project saved = projectRepository.save(project);
         projectMemberService.addOwner(saved, owner);
-        return ProjectResponse.from(saved);
+        return toResponse(saved);
     }
 
     @Transactional
@@ -53,7 +53,7 @@ public class ProjectService {
         return projectRepository.findAll().stream()
                 .peek(this::synchronizeStatus)
                 .filter(Project::isVisibleInActiveList)
-                .map(ProjectResponse::from)
+                .map(this::toResponse)
                 .toList();
     }
 
@@ -63,14 +63,14 @@ public class ProjectService {
                 .peek(this::synchronizeStatus)
                 .filter(Project::isVisibleInActiveList)
                 .filter(project -> projectMemberService.canAccessProject(project, user, admin))
-                .map(ProjectResponse::from)
+                .map(this::toResponse)
                 .toList();
     }
 
     @Transactional
     public List<ProjectResponse> findTrash() {
         return projectRepository.findByStatus(ProjectStatus.DELETED).stream()
-                .map(ProjectResponse::from)
+                .map(this::toResponse)
                 .toList();
     }
 
@@ -78,7 +78,7 @@ public class ProjectService {
     public List<ProjectResponse> findTrash(AuthenticatedUser user, boolean admin) {
         return projectRepository.findByStatus(ProjectStatus.DELETED).stream()
                 .filter(project -> projectMemberService.canAccessProject(project, user, admin))
-                .map(ProjectResponse::from)
+                .map(this::toResponse)
                 .toList();
     }
 
@@ -97,7 +97,7 @@ public class ProjectService {
     public Optional<ProjectResponse> findById(String id) {
         return projectRepository.findById(id).map(project -> {
             synchronizeStatus(project);
-            return ProjectResponse.from(project);
+            return toResponse(project);
         });
     }
 
@@ -105,6 +105,7 @@ public class ProjectService {
     public boolean delete(String id) {
         return projectRepository.findById(id).map(project -> {
             project.markDeleted(LocalDateTime.now());
+            projectInvitationRepository.deactivateByProjectId(id);
             return true;
         }).orElse(false);
     }
@@ -115,7 +116,7 @@ public class ProjectService {
                 .filter(Project::isDeleted)
                 .map(project -> {
                     project.restore(LocalDate.now(), LocalDateTime.now());
-                    return ProjectResponse.from(project);
+                    return toResponse(project);
                 });
     }
 
@@ -134,5 +135,12 @@ public class ProjectService {
 
     private void synchronizeStatus(Project project) {
         project.synchronizeLifecycle(LocalDate.now(), LocalDateTime.now());
+    }
+
+    private ProjectResponse toResponse(Project project) {
+        ProjectResponse response = ProjectResponse.from(project);
+        response.setMembers(projectMemberRepository.findByProjectIdOrderByJoinedAtAsc(project.getId()).stream()
+                .map(com.teample.entity.ProjectMember::getDisplayName).toList());
+        return response;
     }
 }

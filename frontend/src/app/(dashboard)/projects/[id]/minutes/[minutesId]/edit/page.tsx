@@ -149,6 +149,7 @@ export default function EditMinutesPage() {
         pending: normalizeItems(pending),
         todos: todos
           .map((todo) => ({
+            sourceIndex: todo.sourceIndex,
             name: todo.name.trim(),
             task: todo.task.trim(),
             deadline: todo.deadline.trim(),

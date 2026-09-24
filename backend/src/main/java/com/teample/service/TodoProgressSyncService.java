@@ -30,6 +30,7 @@ public class TodoProgressSyncService {
     private static final String TEAM_ALL_KO = "\uD300\uC6D0 \uC804\uCCB4";
     private static final Pattern ASSIGNEE_SEPARATOR = Pattern.compile("[,/;|&]+|\\band\\b", Pattern.CASE_INSENSITIVE);
 
+    private final com.teample.repository.ProjectMemberRepository memberRepository;
     private final MinutesRepository minutesRepository;
     private final ProjectTodoRepository projectTodoRepository;
     private final TodoMemberProgressRepository todoMemberProgressRepository;
@@ -48,8 +49,8 @@ public class TodoProgressSyncService {
         Set<Integer> activeSourceIndexes = new HashSet<>();
 
         for (int index = 0; index < sourceTodos.size(); index++) {
-            final int sourceIndex = index;
             TodoData sourceTodo = sourceTodos.get(index);
+            final int sourceIndex = sourceTodo != null && sourceTodo.getSourceIndex() != null ? sourceTodo.getSourceIndex() : index;
             if (sourceTodo == null || sourceTodo.getTask() == null || sourceTodo.getTask().isBlank()) {
                 continue;
             }
@@ -87,7 +88,9 @@ public class TodoProgressSyncService {
     }
 
     private void syncProgressRows(Project project, Minutes minutes, ProjectTodo projectTodo, TodoData sourceTodo) {
-        List<MemberRef> assignedMembers = resolveAssignedMembers(sourceTodo.getName(), project.getMembers());
+        List<MemberRef> roster = memberRepository.findByProjectIdOrderByJoinedAtAsc(project.getId()).stream()
+                .map(member -> new MemberRef(member.getUserId(), member.getDisplayName())).toList();
+        List<MemberRef> assignedMembers = resolveAssignedMembers(sourceTodo.getName(), roster);
         Set<String> activeUserIds = new HashSet<>();
         Map<String, TodoMemberProgress> existingByUserId = new LinkedHashMap<>();
 
@@ -98,6 +101,12 @@ public class TodoProgressSyncService {
         for (MemberRef member : assignedMembers) {
             activeUserIds.add(member.userId());
             TodoMemberProgress progress = existingByUserId.get(member.userId());
+            if (progress == null && !UNASSIGNED.equals(member.userId())
+                    && roster.stream().filter(account -> account.memberName().equalsIgnoreCase(member.memberName())).count() == 1) {
+                // Preserve legacy completion only when the stored roster resolves one account.
+                progress = existingByUserId.get(member.memberName());
+                if (progress != null) progress.setUserId(member.userId());
+            }
             if (progress == null) {
                 progress = TodoMemberProgress.builder()
                         .todo(projectTodo)
@@ -135,8 +144,7 @@ public class TodoProgressSyncService {
         }
     }
 
-    private List<MemberRef> resolveAssignedMembers(String sourceAssignee, List<String> projectMembers) {
-        List<MemberRef> members = normalizeProjectMembers(projectMembers);
+    private List<MemberRef> resolveAssignedMembers(String sourceAssignee, List<MemberRef> members) {
         String assignee = normalizeOptional(sourceAssignee);
 
         if (assignee == null) {
@@ -165,24 +173,12 @@ public class TodoProgressSyncService {
         return dedupe(resolved);
     }
 
-    private List<MemberRef> normalizeProjectMembers(List<String> projectMembers) {
-        if (projectMembers == null) {
-            return List.of();
-        }
-
-        return projectMembers.stream()
-                .map(this::normalizeOptional)
-                .filter(memberName -> memberName != null)
-                .map(memberName -> new MemberRef(memberName, memberName))
-                .distinct()
-                .toList();
-    }
-
     private MemberRef resolveMember(String memberName, List<MemberRef> projectMembers) {
-        return projectMembers.stream()
-                .filter(member -> member.memberName().equalsIgnoreCase(memberName))
-                .findFirst()
-                .orElseGet(() -> new MemberRef(memberName, memberName));
+        List<MemberRef> matches = projectMembers.stream()
+                .filter(member -> member.memberName().equalsIgnoreCase(memberName) || member.userId().equals(memberName))
+                .toList();
+        // Never guess between two accounts with the same display name.
+        return matches.size() == 1 ? matches.get(0) : new MemberRef(UNASSIGNED, UNASSIGNED);
     }
 
     private List<MemberRef> dedupe(List<MemberRef> members) {

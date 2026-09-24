@@ -13,12 +13,22 @@ import java.util.List;
 @AllArgsConstructor
 public class MinutesResponse {
     private String id;
+    @jakarta.validation.constraints.NotBlank
+    @jakarta.validation.constraints.Size(max = 255)
     private String title;
+    @jakarta.validation.constraints.NotBlank
+    @jakarta.validation.constraints.Size(max = 255)
     private String topic;
-    private List<String> discussions;
-    private List<String> decisions;
-    private List<String> pending;
-    private List<TodoItem> todos;
-    private List<String> nextAgenda;
+    @jakarta.validation.constraints.Size(max = 100)
+    private List<@jakarta.validation.constraints.NotNull @jakarta.validation.constraints.Size(max = 4000) String> discussions;
+    @jakarta.validation.constraints.Size(max = 100)
+    private List<@jakarta.validation.constraints.NotNull @jakarta.validation.constraints.Size(max = 4000) String> decisions;
+    @jakarta.validation.constraints.Size(max = 100)
+    private List<@jakarta.validation.constraints.NotNull @jakarta.validation.constraints.Size(max = 4000) String> pending;
+    @jakarta.validation.Valid
+    @jakarta.validation.constraints.Size(max = 100)
+    private List<@jakarta.validation.constraints.NotNull TodoItem> todos;
+    @jakarta.validation.constraints.Size(max = 100)
+    private List<@jakarta.validation.constraints.NotNull @jakarta.validation.constraints.Size(max = 4000) String> nextAgenda;
     private MinutesEvidence evidence;
 }

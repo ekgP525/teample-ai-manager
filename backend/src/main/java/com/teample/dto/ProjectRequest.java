@@ -11,6 +11,7 @@ import java.time.LocalDate;
 public class ProjectRequest {
 
     @NotBlank
+    @jakarta.validation.constraints.Size(max = 255)
     private String name;
 
     private List<String> members;

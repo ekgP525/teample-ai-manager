@@ -13,7 +13,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Optional;
-import java.util.stream.Stream;
 
 @Service
 @RequiredArgsConstructor
@@ -94,9 +93,6 @@ public class ProjectMemberService {
                 project.getId(), user.authUserId(), ProjectMemberRole.OWNER)) {
             return;
         }
-        if (!projectMemberRepository.existsByProjectId(project.getId()) && isLegacyProjectMember(project, user)) {
-            return;
-        }
         throw new ProjectMemberAccessDeniedException("Only project owners can manage this project.");
     }
 
@@ -117,23 +113,7 @@ public class ProjectMemberService {
         if (projectMemberRepository.existsByProjectIdAndUserId(project.getId(), user.authUserId())) {
             return true;
         }
-        return !projectMemberRepository.existsByProjectId(project.getId()) && isLegacyProjectMember(project, user);
-    }
-
-    private boolean isLegacyProjectMember(Project project, AuthenticatedUser user) {
-        if (project.getMembers() == null || project.getMembers().isEmpty()) {
-            return false;
-        }
-        List<String> candidates = Stream.of(user.authUserId(), user.memberKey(), user.email())
-                .map(this::normalize)
-                .filter(value -> value != null)
-                .toList();
-        if (candidates.isEmpty()) {
-            return false;
-        }
-        return project.getMembers().stream()
-                .map(this::normalize)
-                .anyMatch(member -> member != null && candidates.stream().anyMatch(member::equalsIgnoreCase));
+        return false;
     }
 
     private String resolveDisplayName(AuthenticatedUser user) {

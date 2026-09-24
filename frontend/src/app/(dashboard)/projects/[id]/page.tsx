@@ -233,9 +233,7 @@ export default function ProjectDetailPage() {
   const isEndedProject = project.status === "DISPOSED";
   const canCreateMinutes = !isDeletedProject && !isEndedProject;
   const hasAccountMembers = accountMembers.length > 0;
-  const canManageProject =
-    !hasAccountMembers ||
-    accountMembers.some(
+  const canManageProject = accountMembers.some(
       (member) =>
         member.userId === currentAuthUserId && member.role === "OWNER"
     );

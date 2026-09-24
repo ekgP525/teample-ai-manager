@@ -9,14 +9,24 @@ import java.security.MessageDigest;
 @Service
 public class AdminTestAuthService {
 
-    @Value("${admin.test-id:${ADMIN_TEST_ID:admin}}")
-    private String adminId = "admin";
+    @org.springframework.beans.factory.annotation.Autowired
+    private org.springframework.core.env.Environment environment;
 
-    @Value("${admin.test-password:${ADMIN_TEST_PASSWORD:1234}}")
-    private String adminPassword = "1234";
+    @Value("${admin.test-enabled:false}")
+    private boolean enabled;
+
+    @Value("${admin.test-id:${ADMIN_TEST_ID:}}")
+    private String adminId = "";
+
+    @Value("${admin.test-password:${ADMIN_TEST_PASSWORD:}}")
+    private String adminPassword = "";
 
     public boolean matches(String id, String password) {
-        return secureEquals(adminId, id) && secureEquals(adminPassword, password);
+        return enabled && environment != null
+                && environment.acceptsProfiles(org.springframework.core.env.Profiles.of("dev"))
+                && !environment.acceptsProfiles(org.springframework.core.env.Profiles.of("prod"))
+                && !adminId.isBlank() && adminPassword.length() >= 16
+                && secureEquals(adminId, id) && secureEquals(adminPassword, password);
     }
 
     public String adminId() {

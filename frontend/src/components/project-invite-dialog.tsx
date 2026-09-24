@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { ApiError } from "@/lib/api/client";
 import {
   createProjectInvitation,
+  getActiveProjectInvitation,
   type ProjectInvitation,
 } from "@/lib/api/invitations";
 
@@ -21,6 +22,7 @@ export function ProjectInviteDialog({
   onClose,
 }: ProjectInviteDialogProps) {
   const [invitation, setInvitation] = useState<ProjectInvitation | null>(null);
+  const [isLoadingActive, setIsLoadingActive] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState("");
   const [copiedValue, setCopiedValue] = useState<CopiedValue>(null);
@@ -36,6 +38,35 @@ export function ProjectInviteDialog({
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [onClose]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    void getActiveProjectInvitation(projectId)
+      .then((activeInvitation) => {
+        if (isMounted) {
+          setInvitation(activeInvitation);
+          setError("");
+        }
+      })
+      .catch((requestError: unknown) => {
+        if (!isMounted) return;
+        if (requestError instanceof ApiError && requestError.status === 404) {
+          setInvitation(null);
+          setError("");
+          return;
+        }
+        setInvitation(null);
+        setError(getInvitationErrorMessage(requestError));
+      })
+      .finally(() => {
+        if (isMounted) setIsLoadingActive(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [projectId]);
 
   const createInvitation = async () => {
     setIsCreating(true);
@@ -99,7 +130,13 @@ export function ProjectInviteDialog({
         </header>
 
         <div className="p-5">
-          {invitation ? (
+          {isLoadingActive ? (
+            <div className="py-8 text-center">
+              <p aria-live="polite" className="text-sm text-zinc-500">
+                활성 초대 코드를 확인하는 중...
+              </p>
+            </div>
+          ) : invitation ? (
             <div className="space-y-5">
               <div>
                 <p className="text-sm font-medium">초대 코드</p>

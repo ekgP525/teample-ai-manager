@@ -11,6 +11,9 @@ public interface ProjectInvitationRepository extends JpaRepository<ProjectInvita
 
     Optional<ProjectInvitation> findByCode(String code);
 
+    Optional<ProjectInvitation> findFirstByProjectIdAndActiveTrueAndExpiresAtAfterOrderByCreatedAtDesc(
+            String projectId, java.time.LocalDateTime now);
+
     @Modifying
     @Query("update ProjectInvitation invitation set invitation.active = false "
             + "where invitation.projectId = :projectId and invitation.active = true")

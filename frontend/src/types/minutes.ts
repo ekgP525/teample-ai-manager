@@ -1,4 +1,5 @@
 export interface Todo {
+  sourceIndex?: number;
   name: string;
   task: string;
   deadline: string;

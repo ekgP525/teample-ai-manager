@@ -8,6 +8,10 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class TodoData {
+    private Integer sourceIndex;
+    public TodoData(String name, String task, String deadline) {
+        this(null, name, task, deadline);
+    }
     private String name;
     private String task;
     private String deadline;

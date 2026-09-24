@@ -24,7 +24,7 @@ class MinutesServiceTest {
         Minutes minutes = Minutes.builder().id("minutes-id").build();
         when(minutesRepository.findById("minutes-id")).thenReturn(Optional.of(minutes));
         MinutesService service = new MinutesService(
-                minutesRepository, mock(ProjectRepository.class), mock(ClaudeService.class),
+                minutesRepository, mock(ProjectRepository.class), mock(ProjectMemberService.class), mock(AiUsageService.class),
                 mock(ProjectTodoService.class), mock(TodoProgressSyncService.class));
 
         MinutesResponse response = service.findById("minutes-id").orElseThrow();
@@ -43,17 +43,17 @@ class MinutesServiceTest {
         ProjectRepository projectRepository = mock(ProjectRepository.class);
         ClaudeService claudeService = mock(ClaudeService.class);
         Project project = Project.builder().status(ProjectStatus.ENDED).build();
-        when(projectRepository.findById("project-id")).thenReturn(Optional.of(project));
+        when(projectRepository.findLockedById("project-id")).thenReturn(Optional.of(project));
         MinutesService service = new MinutesService(
-                minutesRepository, projectRepository, claudeService,
+                minutesRepository, projectRepository, mock(ProjectMemberService.class), mock(AiUsageService.class),
                 mock(ProjectTodoService.class), mock(TodoProgressSyncService.class));
 
         MinutesRequest request = new MinutesRequest();
         request.setMeetingDate(LocalDate.now().toString());
         request.setRawText("conversation");
 
-        assertThatThrownBy(() -> service.create("project-id", request))
-                .isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> service.saveGenerated("project-id", request, null, new com.teample.security.AuthenticatedUser("user", "name", null), false, "request-key"))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
         verifyNoInteractions(claudeService);
         verify(minutesRepository, never()).save(any());
     }

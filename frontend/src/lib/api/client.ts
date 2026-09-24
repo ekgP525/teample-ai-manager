@@ -4,7 +4,7 @@ import {
 } from "@/lib/admin-test-auth";
 import { supabase } from "@/lib/supabase";
 
-const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+const apiUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/+$/, "");
 let isRedirectingToLogin = false;
 
 export class ApiError extends Error {

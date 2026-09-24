@@ -43,6 +43,7 @@ class ProjectInvitationServiceTest {
 
     @Test
     void createDeactivatesPreviousCodesAndCreatesExpiringCode() {
+        when(projectRepository.findById("project-id")).thenReturn(Optional.of(Project.builder().id("project-id").build()));
         AuthenticatedUser owner = new AuthenticatedUser("owner-id", "owner", "owner@example.com");
         when(invitationRepository.findByCode(org.mockito.ArgumentMatchers.anyString())).thenReturn(Optional.empty());
         when(invitationRepository.save(org.mockito.ArgumentMatchers.any(ProjectInvitation.class)))

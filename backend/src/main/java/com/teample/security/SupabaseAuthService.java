@@ -37,7 +37,7 @@ public class SupabaseAuthService {
     private static final Duration JWKS_CACHE_TTL = Duration.ofMinutes(10);
 
     private final ObjectMapper objectMapper = new ObjectMapper();
-    private final HttpClient httpClient = HttpClient.newHttpClient();
+    private final HttpClient httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build();
     private final Clock clock = Clock.systemUTC();
 
     @Value("${supabase.jwks-uri:${SUPABASE_JWKS_URI:}}")
@@ -47,6 +47,7 @@ public class SupabaseAuthService {
     private String supabaseJwtIssuer;
 
     private volatile CachedJwks cachedJwks;
+    private Instant nextRefreshAllowed = Instant.EPOCH;
 
     public AuthenticatedUser authenticate(HttpServletRequest request) {
         String token = resolveBearerToken(request);
@@ -63,7 +64,7 @@ public class SupabaseAuthService {
             throw new AuthRequiredException("Authorization bearer token is required.");
         }
         String token = authorization.substring("Bearer ".length()).trim();
-        if (token.isBlank()) {
+        if (token.isBlank() || token.length() > 16384) {
             throw new AuthRequiredException("Authorization bearer token is empty.");
         }
         return token;
@@ -121,13 +122,17 @@ public class SupabaseAuthService {
         throw new AuthRequiredException("Supabase signing key was not found.");
     }
 
-    private JsonNode trustedJwks(String kid) {
+    private synchronized JsonNode trustedJwks(String kid) {
         Instant now = Instant.now(clock);
         CachedJwks current = cachedJwks;
         if (current != null && now.isBefore(current.expiresAt()) && containsKid(current.jwks(), kid)) {
             return current.jwks();
         }
 
+        if (now.isBefore(nextRefreshAllowed)) {
+            throw new AuthRequiredException("Supabase signing key is temporarily unavailable.");
+        }
+        nextRefreshAllowed = now.plusSeconds(30);
         JsonNode fresh = fetchJwks();
         cachedJwks = new CachedJwks(fresh, now.plus(JWKS_CACHE_TTL));
         return fresh;
@@ -136,6 +141,7 @@ public class SupabaseAuthService {
     protected JsonNode fetchJwks() {
         try {
             HttpRequest request = HttpRequest.newBuilder(URI.create(supabaseJwksUri.trim()))
+                    .timeout(Duration.ofSeconds(5))
                     .GET()
                     .build();
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));

@@ -66,6 +66,7 @@ public class ProjectTodoService {
 
         int nextPriority = todoRepository.findMaxPriorityOrderByProjectId(minutes.getProject().getId());
         List<IntegratedTodo> changed = new ArrayList<>();
+        Set<Integer> active = new HashSet<>();
 
         for (int index = 0; index < sourceTodos.size(); index++) {
             TodoData source = sourceTodos.get(index);
@@ -75,12 +76,14 @@ public class ProjectTodoService {
 
             String assigneeName = source.getName() != null && !source.getName().isBlank()
                     ? source.getName().trim() : "UNASSIGNED";
-            IntegratedTodo todo = existingByIndex.get(index);
+            int sourceIndex = source.getSourceIndex() == null ? index : source.getSourceIndex();
+            active.add(sourceIndex);
+            IntegratedTodo todo = existingByIndex.get(sourceIndex);
             if (todo == null) {
                 todo = IntegratedTodo.builder()
                         .project(minutes.getProject())
                         .minutes(minutes)
-                        .sourceIndex(index)
+                        .sourceIndex(sourceIndex)
                         .status(TodoStatus.TODO)
                         .priorityOrder(++nextPriority)
                         .build();
@@ -93,6 +96,9 @@ public class ProjectTodoService {
             changed.add(todo);
         }
 
+        existingByIndex.forEach((sourceIndex, todo) -> {
+            if (!active.contains(sourceIndex)) todoRepository.delete(todo);
+        });
         if (!changed.isEmpty()) {
             todoRepository.saveAll(changed);
         }

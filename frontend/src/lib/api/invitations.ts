@@ -22,6 +22,15 @@ export async function createProjectInvitation(projectId: string) {
   );
 }
 
+export async function getActiveProjectInvitation(projectId: string) {
+  return apiRequest<ProjectInvitation>(
+    `/api/projects/${encodeURIComponent(projectId)}/invitations/active`,
+    {
+      errorMessage: "활성 초대 코드를 불러오지 못했습니다.",
+    }
+  );
+}
+
 export async function joinProjectInvitation(code: string) {
   return apiRequest<JoinProjectInvitationResponse>(
     "/api/project-invitations/join",

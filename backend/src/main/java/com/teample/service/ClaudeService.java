@@ -28,20 +28,34 @@ public class ClaudeService {
         if (apiKey != null && !apiKey.isBlank()) {
             client = AnthropicOkHttpClient.builder()
                     .apiKey(apiKey)
+                    .timeout(java.time.Duration.ofSeconds(90))
+                    .maxRetries(0)
                     .build();
         }
     }
 
+    public void ensureConfigured() {
+        if (client == null) throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE, "AI 서비스가 설정되지 않았습니다.");
+    }
+
     public MinutesResult analyze(String rawText, String subject, List<String> members) {
+        ensureConfigured();
         String prompt = buildPrompt(rawText, subject, members);
 
         MessageCreateParams params = MessageCreateParams.builder()
                 .model(Model.CLAUDE_SONNET_4_5)
-                .maxTokens(2048L)
+                .maxTokens(8192L)
                 .addUserMessage(prompt)
                 .build();
 
-        Message message = client.messages().create(params);
+        Message message;
+        try { message = client.messages().create(params); }
+        catch (RuntimeException e) {
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_GATEWAY, "AI 응답을 받지 못했습니다. 잠시 후 새 요청으로 다시 시도해 주세요.");
+        }
+        if (message.stopReason().map(reason -> reason.equals(StopReason.MAX_TOKENS)).orElse(false)) {
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_GATEWAY, "AI 결과가 너무 깁니다. 대화를 나누어 다시 요청해 주세요.");
+        }
 
         StringBuilder sb = new StringBuilder();
         message.content().forEach(block ->
@@ -50,7 +64,7 @@ public class ClaudeService {
 
         String responseText = sb.toString();
         if (responseText.isBlank()) {
-            throw new RuntimeException("Claude 응답이 비어있습니다.");
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_GATEWAY, "AI 응답이 비어있습니다.");
         }
 
         return parseResponse(responseText);
@@ -138,9 +152,13 @@ public class ClaudeService {
                     jsonArrayToList(evidenceNode.path("nextAgenda"))
             );
 
+            if (title.isBlank() || title.length() > 255 || topic.isBlank() || topic.length() > 255 || todos.size() > 100
+                    || todos.stream().anyMatch(t -> t.getTask().isBlank() || t.getTask().length() > 4000 || t.getName().length() > 255 || t.getDeadline().length() > 255)) {
+                throw new IllegalArgumentException("Invalid AI output");
+            }
             return new MinutesResult(title, topic, discussions, decisions, pending, todos, nextAgenda, evidence);
         } catch (Exception e) {
-            throw new RuntimeException("Claude 응답 파싱 실패: " + e.getMessage(), e);
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_GATEWAY, "AI 결과 형식이 올바르지 않습니다. 대화를 줄여 다시 요청해 주세요.");
         }
     }
 

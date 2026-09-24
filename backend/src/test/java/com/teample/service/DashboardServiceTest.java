@@ -65,6 +65,8 @@ class DashboardServiceTest {
 
     @BeforeEach
     void setUp() {
+        org.mockito.Mockito.lenient().when(projectMemberRepository.existsByProjectIdAndUserId("project-1", "alice")).thenReturn(true);
+        org.mockito.Mockito.lenient().when(projectMemberRepository.existsByProjectIdAndUserId("project-1", "bob")).thenReturn(true);
         dashboardService = new DashboardService(
                 projectRepository,
                 projectMemberRepository,
@@ -228,6 +230,9 @@ class DashboardServiceTest {
 
     @Test
     void teamProgressSummaryHandlesEmptyTotalWithExistingProgressPolicy() {
+        when(projectMemberRepository.findByProjectIdOrderByJoinedAtAsc("project-1")).thenReturn(List.of(
+                com.teample.entity.ProjectMember.builder().userId("alice").displayName("Alice").build(),
+                com.teample.entity.ProjectMember.builder().userId("bob").displayName("Bob").build()));
         when(projectRepository.findById("project-1")).thenReturn(Optional.of(project));
         when(todoMemberProgressRepository.findByProjectIdAndAssignedTrue("project-1"))
                 .thenReturn(List.of());
@@ -255,17 +260,18 @@ class DashboardServiceTest {
                 .isInstanceOf(TodoAccessDeniedException.class);
     }
     @Test
-    void jwtDashboardUsesProjectMemberAccessAndLegacyProgressKey() {
+    void jwtDashboardUsesImmutableAccountId() {
+        aliceProgress.setUserId("supabase-user-id");
         AuthenticatedUser user = new AuthenticatedUser("supabase-user-id", "alice", "alice@example.com");
         when(projectRepository.findById("project-1")).thenReturn(Optional.of(project));
-        when(todoMemberProgressRepository.findByProjectIdAndUserIdAndAssignedTrue("project-1", "alice"))
+        when(todoMemberProgressRepository.findByProjectIdAndUserIdAndAssignedTrue("project-1", "supabase-user-id"))
                 .thenReturn(List.of(aliceProgress));
 
         MyProjectDashboardResponse dashboard = dashboardService.findMyProjectDashboard("project-1", user, false)
                 .orElseThrow();
 
         verify(projectMemberService).ensureProjectMember(project, user, false);
-        assertThat(dashboard.getUserId()).isEqualTo("alice");
+        assertThat(dashboard.getUserId()).isEqualTo("supabase-user-id");
         assertThat(dashboard.getTodos()).hasSize(1);
     }
     private TodoMemberProgress progress(String id, String userId, boolean completed, ProjectTodo todo) {

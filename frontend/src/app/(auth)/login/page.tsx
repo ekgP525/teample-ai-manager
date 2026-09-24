@@ -8,7 +8,11 @@ import {
   hasAdminTestSession,
   setAdminTestSession,
 } from "@/lib/admin-test-auth";
-import { signInWithOAuth as signInWithSocialOAuth } from "@/lib/sign-in-with-oauth";
+import {
+  getOAuthCallbackError,
+  getOAuthErrorMessage,
+  signInWithOAuth as signInWithSocialOAuth,
+} from "@/lib/sign-in-with-oauth";
 import { supabase } from "@/lib/supabase";
 
 const ADMIN_TEST_ID = "admin";
@@ -21,7 +25,7 @@ function LoginForm() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const next = searchParams.get("next")?.startsWith("/")
+  const next = searchParams.get("next")?.startsWith("/") && !searchParams.get("next")!.startsWith("//") && !searchParams.get("next")!.includes("\\")
     ? searchParams.get("next")!
     : "/projects";
   const reason = searchParams.get("reason");
@@ -32,9 +36,10 @@ function LoginForm() {
         ? "관리자 테스트 인증이 만료되었습니다. 다시 로그인해 주세요."
         : reason === "login-required"
           ? "로그인이 필요한 페이지입니다."
-          : searchParams.get("error")
-            ? "로그인에 실패했습니다. 다시 시도해 주세요."
-            : null;
+          : getOAuthCallbackError(searchParams) ||
+            (searchParams.get("error")
+              ? "로그인에 실패했습니다. 다시 시도해 주세요."
+              : null);
 
   useEffect(() => {
     let isMounted = true;
@@ -78,7 +83,7 @@ function LoginForm() {
     try {
       const loginId = email.trim();
       const normalizedEmail = loginId.toLowerCase();
-      const isAdminTestLogin = normalizedEmail === ADMIN_TEST_ID;
+      const isAdminTestLogin = process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_ENABLE_ADMIN_TEST === "true" && normalizedEmail === ADMIN_TEST_ID;
 
       if (isAdminTestLogin) {
         if (!apiUrl) {
@@ -142,7 +147,7 @@ function LoginForm() {
       const { error: signInError } = await signInWithSocialOAuth(provider, next);
 
       if (signInError) {
-        setError(`${provider === "google" ? "Google" : "카카오"} 로그인에 실패했습니다. 다시 시도해 주세요.`);
+        setError(getOAuthErrorMessage(provider, signInError));
         setIsLoading(false);
       }
     } catch {

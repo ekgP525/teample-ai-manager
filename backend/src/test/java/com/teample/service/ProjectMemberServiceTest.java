@@ -93,14 +93,14 @@ class ProjectMemberServiceTest {
     }
 
     @Test
-    void ensureProjectMemberAllowsLegacyMemberWhenProjectHasNoAccountMembers() {
+    void ensureProjectMemberRejectsNameOnlyLegacyMembership() {
         AuthenticatedUser user = new AuthenticatedUser("supabase-user-id", "alice", "alice@example.com");
         Project project = Project.builder().id("project-id").members(List.of("alice", "bob")).build();
         when(projectRepository.findById("project-id")).thenReturn(Optional.of(project));
         when(projectMemberRepository.existsByProjectIdAndUserId("project-id", "supabase-user-id")).thenReturn(false);
-        when(projectMemberRepository.existsByProjectId("project-id")).thenReturn(false);
 
-        service.ensureProjectMember("project-id", user, false);
+        assertThatThrownBy(() -> service.ensureProjectMember("project-id", user, false))
+                .isInstanceOf(ProjectMemberService.ProjectMemberAccessDeniedException.class);
     }
 
     @Test
@@ -110,7 +110,6 @@ class ProjectMemberServiceTest {
         when(projectRepository.findById("project-id")).thenReturn(Optional.of(project));
         when(projectMemberRepository.existsByProjectIdAndUserIdAndRole(
                 "project-id", "member-user-id", ProjectMemberRole.OWNER)).thenReturn(false);
-        when(projectMemberRepository.existsByProjectId("project-id")).thenReturn(true);
 
         assertThatThrownBy(() -> service.ensureProjectOwner("project-id", user, false))
                 .isInstanceOf(ProjectMemberService.ProjectMemberAccessDeniedException.class);
@@ -122,7 +121,6 @@ class ProjectMemberServiceTest {
         Project project = Project.builder().id("project-id").members(List.of("alice")).build();
         when(projectRepository.findById("project-id")).thenReturn(Optional.of(project));
         when(projectMemberRepository.existsByProjectIdAndUserId("project-id", "other-user-id")).thenReturn(false);
-        when(projectMemberRepository.existsByProjectId("project-id")).thenReturn(true);
 
         assertThatThrownBy(() -> service.findProjectMembers("project-id", user, false))
                 .isInstanceOf(ProjectMemberService.ProjectMemberAccessDeniedException.class);

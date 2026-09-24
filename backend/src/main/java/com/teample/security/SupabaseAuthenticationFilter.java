@@ -14,8 +14,6 @@ import java.io.IOException;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
-import java.util.List;
-import java.util.regex.Pattern;
 
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE + 10)
@@ -30,23 +28,6 @@ public class SupabaseAuthenticationFilter extends OncePerRequestFilter {
     public static final String ADMIN_ID_HEADER = "X-Admin-Id";
     public static final String ADMIN_PASSWORD_HEADER = "X-Admin-Password";
     public static final String CURRENT_USER_ID_HEADER = "X-Current-User-Id";
-
-    private static final List<Pattern> PROTECTED_PATHS = List.of(
-            Pattern.compile("^/api/auth/me$"),
-            Pattern.compile("^/api/dashboard(?:/.*)?$"),
-            Pattern.compile("^/api/projects/[^/]+/dashboard(?:/.*)?$"),
-            Pattern.compile("^/api/todo-assignments/[^/]+$"),
-            Pattern.compile("^/api/todos/[^/]+/progress$")
-    );
-    private static final Pattern PROJECT_MEMBERS_PATH = Pattern.compile("^/api/projects/[^/]+/members$");
-    private static final Pattern PROJECT_INVITATIONS_PATH = Pattern.compile("^/api/projects/[^/]+/invitations$");
-    private static final Pattern JOIN_INVITATION_PATH = Pattern.compile("^/api/project-invitations/join$");
-    private static final List<Pattern> PROJECT_RESOURCE_PATHS = List.of(
-            Pattern.compile("^/api/projects/[^/]+$"),
-            Pattern.compile("^/api/projects/[^/]+/(restore|permanent)$"),
-            Pattern.compile("^/api/projects/[^/]+/minutes(?:/.*)?$"),
-            Pattern.compile("^/api/projects/[^/]+/todos(?:/.*)?$")
-    );
 
     private final SupabaseAuthService authService;
     private final AdminTestAuthService adminTestAuthService;
@@ -83,28 +64,8 @@ public class SupabaseAuthenticationFilter extends OncePerRequestFilter {
     }
 
     private boolean requiresAuthentication(HttpServletRequest request) {
-        String requestPath = normalizeRequestPath(request);
-        String method = request.getMethod();
-        if (("GET".equalsIgnoreCase(method) || "POST".equalsIgnoreCase(method))
-                && "/api/projects".equals(requestPath)) {
-            return true;
-        }
-        if ("GET".equalsIgnoreCase(method) && "/api/projects/trash".equals(requestPath)) {
-            return true;
-        }
-        if ("GET".equalsIgnoreCase(method) && PROJECT_MEMBERS_PATH.matcher(requestPath).matches()) {
-            return true;
-        }
-        if ("POST".equalsIgnoreCase(method)
-                && (PROJECT_INVITATIONS_PATH.matcher(requestPath).matches()
-                || JOIN_INVITATION_PATH.matcher(requestPath).matches())) {
-            return true;
-        }
-        if (PROJECT_RESOURCE_PATHS.stream().anyMatch(pattern -> pattern.matcher(requestPath).matches())) {
-            return true;
-        }
-        return PROTECTED_PATHS.stream()
-                .anyMatch(pattern -> pattern.matcher(requestPath).matches());
+        String path = normalizeRequestPath(request);
+        return path.startsWith("/api/") && !("POST".equalsIgnoreCase(request.getMethod()) && "/api/auth/admin/verify".equals(path));
     }
 
     private AuthenticatedUser resolveAdminTestUser(HttpServletRequest request) {

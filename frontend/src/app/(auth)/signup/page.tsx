@@ -2,7 +2,10 @@
 
 import Link from "next/link";
 import { type FormEvent, useState } from "react";
-import { signInWithOAuth } from "@/lib/sign-in-with-oauth";
+import {
+  getOAuthErrorMessage,
+  signInWithOAuth,
+} from "@/lib/sign-in-with-oauth";
 import { supabase } from "@/lib/supabase";
 
 export default function SignupPage() {
@@ -51,7 +54,7 @@ export default function SignupPage() {
       const { error: signInError } = await signInWithOAuth(provider);
 
       if (signInError) {
-        setError(`${provider === "google" ? "Google" : "카카오"} 로그인에 실패했습니다. 다시 시도해 주세요.`);
+        setError(getOAuthErrorMessage(provider, signInError));
         setIsLoading(false);
       }
     } catch {

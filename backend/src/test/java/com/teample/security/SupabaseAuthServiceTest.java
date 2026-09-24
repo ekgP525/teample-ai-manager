@@ -255,8 +255,26 @@ class SupabaseAuthServiceTest {
         return Base64.getUrlEncoder().withoutPadding().encodeToString(value);
     }
 
+    @Test
+    void unknownKeysCannotTriggerRepeatedRemoteRequests() throws Exception {
+        KeyPair keyPair = keyPair();
+        TestSupabaseAuthService service = new TestSupabaseAuthService(jwks(keyPair));
+        ReflectionTestUtils.setField(service, "supabaseJwksUri", JWKS_URI);
+        ReflectionTestUtils.setField(service, "supabaseJwtIssuer", ISSUER);
+        String payload = "{\"sub\":\"user\",\"iss\":\"" + ISSUER + "\",\"exp\":" + Instant.now().plusSeconds(60).getEpochSecond() + "}";
+        service.authenticate(requestWithBearer(token(payload, keyPair, KEY_ID)));
+        for (int index = 0; index < 10; index++) {
+            String unknown = token(payload, keyPair, "unknown-" + index);
+            assertThatThrownBy(() -> service.authenticate(requestWithBearer(unknown))).isInstanceOf(AuthRequiredException.class);
+        }
+        assertThat(service.fetchCount).isEqualTo(1);
+        service.authenticate(requestWithBearer(token(payload, keyPair, KEY_ID)));
+        assertThat(service.fetchCount).isEqualTo(1);
+    }
+
     private static class TestSupabaseAuthService extends SupabaseAuthService {
         private final JsonNode jwks;
+        private int fetchCount;
 
         private TestSupabaseAuthService(JsonNode jwks) {
             this.jwks = jwks;
@@ -264,6 +282,7 @@ class SupabaseAuthServiceTest {
 
         @Override
         protected JsonNode fetchJwks() {
+            fetchCount++;
             return jwks;
         }
     }

@@ -31,9 +31,20 @@ public class ProjectInvitationService {
     private final ProjectMemberService projectMemberService;
     private final SecureRandom secureRandom = new SecureRandom();
 
+    @Transactional(readOnly = true)
+    public java.util.Optional<ProjectInvitationResponse> findActive(String projectId, AuthenticatedUser user, boolean admin) {
+        projectMemberService.ensureProjectOwner(projectId, user, admin);
+        Project project = projectRepository.findById(projectId).orElseThrow(() -> new InvitationNotFoundException("Project not found."));
+        if (project.isDeleted()) return java.util.Optional.empty();
+        return invitationRepository.findFirstByProjectIdAndActiveTrueAndExpiresAtAfterOrderByCreatedAtDesc(projectId, LocalDateTime.now())
+                .map(ProjectInvitationResponse::from);
+    }
+
     @Transactional
     public ProjectInvitationResponse create(String projectId, AuthenticatedUser user, boolean admin) {
         projectMemberService.ensureProjectOwner(projectId, user, admin);
+        Project project = projectRepository.findById(projectId).orElseThrow(() -> new InvitationNotFoundException("Project not found."));
+        if (project.isDeleted()) throw new InvitationExpiredException("Project is deleted.");
         invitationRepository.deactivateByProjectId(projectId);
         ProjectInvitation invitation = ProjectInvitation.builder()
                 .projectId(projectId)
@@ -53,6 +64,7 @@ public class ProjectInvitationService {
         }
         Project project = projectRepository.findById(invitation.getProjectId())
                 .orElseThrow(() -> new InvitationNotFoundException("Project not found."));
+        if (project.isDeleted()) throw new InvitationExpiredException("Project is deleted.");
         if (memberRepository.existsByProjectIdAndUserId(project.getId(), user.authUserId())) {
             throw new AlreadyProjectMemberException("User is already a project member.");
         }

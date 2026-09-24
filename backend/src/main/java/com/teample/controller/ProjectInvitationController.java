@@ -25,6 +25,12 @@ public class ProjectInvitationController {
 
     private final ProjectInvitationService invitationService;
 
+    @org.springframework.web.bind.annotation.GetMapping("/api/projects/{projectId}/invitations/active")
+    public ResponseEntity<ProjectInvitationResponse> activeInvitation(@PathVariable String projectId, HttpServletRequest request) {
+        return invitationService.findActive(projectId, authenticatedUser(request), isAdmin(request))
+                .map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
     @PostMapping("/api/projects/{projectId}/invitations")
     public ResponseEntity<ProjectInvitationResponse> createInvitation(
             @PathVariable String projectId, HttpServletRequest request) {

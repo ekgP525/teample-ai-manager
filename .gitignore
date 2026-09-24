@@ -22,6 +22,7 @@ backend/build/
 backend/.gradle/
 backend/bin/
 backend/out/
+backend/data/
 *.class
 *.jar
 !backend/gradle/wrapper/gradle-wrapper.jar

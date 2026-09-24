@@ -31,6 +31,7 @@ import java.util.List;
 public class MinutesController {
 
     private final MinutesService minutesService;
+    private final com.teample.service.MinutesGenerationService generationService;
     private final ProjectMemberService projectMemberService;
 
     @GetMapping
@@ -46,10 +47,11 @@ public class MinutesController {
     public ResponseEntity<MinutesResponse> createMinutes(
             @PathVariable String projectId,
             @Valid @RequestBody MinutesRequest request,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "Idempotency-Key", required = false) String key,
             HttpServletRequest servletRequest
     ) {
         projectMemberService.ensureProjectMember(projectId, authenticatedUser(servletRequest), isAdmin(servletRequest));
-        return ResponseEntity.ok(minutesService.create(projectId, request));
+        return ResponseEntity.ok(generationService.create(projectId, request, authenticatedUser(servletRequest), isAdmin(servletRequest), key));
     }
 
     @GetMapping("/{id}")
@@ -68,7 +70,7 @@ public class MinutesController {
     public ResponseEntity<MinutesResponse> updateMinutes(
             @PathVariable String projectId,
             @PathVariable String id,
-            @RequestBody MinutesResponse request,
+            @Valid @RequestBody MinutesResponse request,
             HttpServletRequest servletRequest
     ) {
         projectMemberService.ensureProjectMember(projectId, authenticatedUser(servletRequest), isAdmin(servletRequest));

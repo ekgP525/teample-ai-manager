@@ -43,9 +43,10 @@ export function getMinutes(
   });
 }
 
-export function createMinutes(projectId: string, input: CreateMinutesInput) {
+export function createMinutes(projectId: string, input: CreateMinutesInput, requestKey: string) {
   return apiRequest<Minutes>(minutesPath(projectId), {
     method: "POST",
+    headers: { "Idempotency-Key": requestKey },
     body: JSON.stringify(input),
     errorMessage: "회의록 생성에 실패했습니다.",
   });

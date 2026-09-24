@@ -323,7 +323,13 @@ public class DashboardService {
         }
 
         List<TeamMemberProgressResponse> members = progressByUser.entrySet().stream()
-                .map(entry -> buildTeamMemberResponse(entry.getKey(), entry.getValue()))
+                .map(entry -> {
+                    TeamMemberProgressResponse response = buildTeamMemberResponse(entry.getKey(), entry.getValue());
+                    projectMemberRepository.findByProjectIdOrderByJoinedAtAsc(project.getId()).stream()
+                        .filter(member -> member.getUserId().equals(entry.getKey())).findFirst()
+                        .ifPresent(member -> response.setMemberName(member.getDisplayName()));
+                    return response;
+                })
                 .toList();
 
         Map<String, List<TodoMemberProgress>> progressByTodo = new LinkedHashMap<>();
@@ -358,13 +364,7 @@ public class DashboardService {
 
     private boolean isProjectMember(Project project, String currentUserId) {
         String resolvedUserId = normalizeOptionalUserId(currentUserId);
-        if (resolvedUserId == null || project.getMembers() == null) {
-            return false;
-        }
-
-        return project.getMembers().stream()
-                .map(this::normalizeOptionalUserId)
-                .anyMatch(member -> member != null && member.equalsIgnoreCase(resolvedUserId));
+        return resolvedUserId != null && projectMemberRepository.existsByProjectIdAndUserId(project.getId(), resolvedUserId);
     }
 
     private void ensureProgressProjectAccess(TodoMemberProgress progress, AuthenticatedUser user, boolean admin) {
@@ -594,12 +594,12 @@ public class DashboardService {
 
     private Map<String, List<TodoMemberProgress>> initMemberProgressMap(Project project) {
         List<String> accountMemberNames = projectMemberRepository.findByProjectIdOrderByJoinedAtAsc(project.getId()).stream()
-                .map(ProjectMember::getDisplayName)
+                .map(ProjectMember::getUserId)
                 .toList();
         if (!accountMemberNames.isEmpty()) {
             return initMemberProgressMap(accountMemberNames);
         }
-        return initMemberProgressMap(project.getMembers());
+        return new LinkedHashMap<>();
     }
 
     private Map<String, List<TodoMemberProgress>> initMemberProgressMap(List<String> members) {
@@ -713,7 +713,7 @@ public class DashboardService {
     }
 
     private String dashboardUserId(AuthenticatedUser user) {
-        return user == null ? null : normalizeOptionalUserId(user.memberKey());
+        return user == null ? null : normalizeOptionalUserId(user.authUserId());
     }
 
     private String normalizeOptionalUserId(String userId) {

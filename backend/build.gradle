@@ -24,7 +24,7 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-flyway'
 
 	// OpenAPI / Swagger
-	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.9'
+	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.3'
 
 	// Claude API
 	implementation 'com.anthropic:anthropic-java:2.52.0'
@@ -52,7 +52,9 @@ bootRun {
 		envFile.readLines().each { line ->
 			if (line && !line.startsWith('#') && line.contains('=')) {
 				def (key, value) = line.split('=', 2)
-				environment key.trim(), value.trim()
+				if (!value.trim().isEmpty()) {
+                        environment key.trim(), value.trim()
+                    }
 			}
 		}
 	}

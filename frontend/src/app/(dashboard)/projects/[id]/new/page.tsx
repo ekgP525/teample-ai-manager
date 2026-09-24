@@ -1,14 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
+import { ApiError } from "@/lib/api/client";
 import { createMinutes } from "@/lib/api/minutes";
 import { getProject } from "@/lib/api/projects";
 import type { Project } from "@/types/minutes";
 
 export default function NewMinutesPage() {
   const router = useRouter();
+  const generationRequest = useRef<{ payload: string; key: string } | null>(null);
   const { id } = useParams<{ id: string }>();
   const [title, setTitle] = useState("");
   const [meetingDate, setMeetingDate] = useState("");
@@ -106,13 +108,15 @@ export default function NewMinutesPage() {
     setError("");
 
     try {
-      const data = await createMinutes(id, {
-        title: title.trim(),
-        meetingDate,
-        rawText: trimmedRawText,
-      });
+      const input = { title: title.trim(), meetingDate, rawText: trimmedRawText };
+      const payload = JSON.stringify({ id, ...input });
+      if (generationRequest.current?.payload !== payload) {
+        generationRequest.current = { payload, key: crypto.randomUUID() };
+      }
+      const data = await createMinutes(id, input, generationRequest.current.key);
       router.push(`/projects/${id}/minutes/${data.id}`);
     } catch (err) {
+      if (err instanceof ApiError && [400, 410, 429, 502, 503].includes(err.status)) generationRequest.current = null;
       setError(
         err instanceof Error ? err.message : "회의록 생성에 실패했습니다."
       );
@@ -192,6 +196,7 @@ export default function NewMinutesPage() {
               회의록 제목
             </label>
             <input
+              maxLength={255}
               id="title"
               type="text"
               placeholder="예: 1차 기획 회의 (비워두면 AI가 자동 생성)"
@@ -226,6 +231,7 @@ export default function NewMinutesPage() {
               카톡 대화 내용
             </label>
             <textarea
+              maxLength={50000}
               id="rawText"
               rows={12}
               placeholder="카카오톡 단톡방 대화를 복사해서 여기에 붙여넣으세요..."

@@ -32,6 +32,10 @@ public class Minutes {
     @Column(name = "raw_text", columnDefinition = "text", nullable = false)
     private String rawText;
 
+    @Builder.Default
+    @Column(name = "next_todo_index", nullable = false)
+    private int nextTodoIndex = 0;
+
     private String title;
 
     private String topic;
