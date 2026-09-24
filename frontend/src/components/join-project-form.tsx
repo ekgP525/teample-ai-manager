@@ -92,14 +92,14 @@ export function JoinProjectForm({ initialCode }: { initialCode: string }) {
               setCode(normalizeCode(event.target.value));
               setError("");
             }}
-            placeholder="예: A7KD-92QM"
+            placeholder="초대 코드를 여기에 입력해 주세요"
             autoComplete="off"
             autoCapitalize="characters"
             spellCheck={false}
             maxLength={32}
             disabled={isJoining}
             aria-describedby="invitation-code-help"
-            className="mt-2 w-full rounded-lg border border-zinc-300 px-3 py-3 text-center font-mono text-lg font-semibold tracking-[0.12em] uppercase focus:outline-none focus:ring-2 focus:ring-zinc-900 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:focus:ring-zinc-100"
+            className="mt-2 w-full rounded-lg border border-zinc-300 px-3 py-3 text-center font-mono text-lg font-semibold tracking-[0.12em] uppercase placeholder:font-sans placeholder:text-base placeholder:font-normal placeholder:tracking-normal placeholder:normal-case focus:outline-none focus:ring-2 focus:ring-zinc-900 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:focus:ring-zinc-100"
           />
           <p id="invitation-code-help" className="mt-2 text-xs text-zinc-500">
             공백은 자동으로 제거되며 영문자는 대문자로 입력됩니다.
@@ -143,12 +143,11 @@ function normalizeCode(value: string) {
 
 function getJoinErrorMessage(error: unknown) {
   if (error instanceof ApiError) {
-    if (error.status === 404 || error.status === 405) {
-      return "초대 API가 아직 연결되지 않았습니다. 백엔드 구현 후 참여할 수 있습니다.";
-    }
-    if (error.status === 409) return "이미 참여 중이거나 더 이상 사용할 수 없는 코드입니다.";
-    if (error.status === 410) return "만료되었거나 취소된 초대 코드입니다.";
-    if (error.status === 401) return "로그인 정보를 다시 확인해 주세요.";
+    if (error.status === 400) return "초대 코드를 입력해 주세요.";
+    if (error.status === 401) return "로그인이 만료되었습니다. 다시 로그인해 주세요.";
+    if (error.status === 404) return "존재하지 않는 초대 코드입니다. 코드를 다시 확인해 주세요.";
+    if (error.status === 409) return "이미 참여 중인 프로젝트입니다.";
+    if (error.status === 410) return "만료되었거나 더 이상 사용할 수 없는 초대 코드입니다. 새 코드를 요청해 주세요.";
   }
 
   return error instanceof Error

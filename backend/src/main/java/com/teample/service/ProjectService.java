@@ -3,6 +3,7 @@ package com.teample.service;
 import com.teample.dto.ProjectRequest;
 import com.teample.dto.ProjectResponse;
 import com.teample.entity.Project;
+import com.teample.entity.ProjectMember;
 import com.teample.entity.ProjectStatus;
 import com.teample.repository.IntegratedTodoRepository;
 import com.teample.repository.MinutesRepository;
@@ -45,7 +46,7 @@ public class ProjectService {
         synchronizeStatus(project);
         Project saved = projectRepository.save(project);
         projectMemberService.addOwner(saved, owner);
-        return toResponse(saved);
+        return ProjectResponse.from(saved, resolveProjectMemberNames(saved, owner));
     }
 
     @Transactional
@@ -138,9 +139,29 @@ public class ProjectService {
     }
 
     private ProjectResponse toResponse(Project project) {
-        ProjectResponse response = ProjectResponse.from(project);
-        response.setMembers(projectMemberRepository.findByProjectIdOrderByJoinedAtAsc(project.getId()).stream()
-                .map(com.teample.entity.ProjectMember::getDisplayName).toList());
-        return response;
+        return ProjectResponse.from(project, resolveProjectMemberNames(project, null));
+    }
+
+    private List<String> resolveProjectMemberNames(Project project, AuthenticatedUser fallbackOwner) {
+        List<String> accountMemberNames = projectMemberRepository.findByProjectIdOrderByJoinedAtAsc(project.getId()).stream()
+                .map(ProjectMember::getDisplayName)
+                .map(this::normalizeOptional)
+                .filter(value -> value != null)
+                .distinct()
+                .toList();
+        if (!accountMemberNames.isEmpty()) {
+            return accountMemberNames;
+        }
+        if (fallbackOwner != null) {
+            String ownerName = normalizeOptional(fallbackOwner.memberKey());
+            if (ownerName != null) {
+                return List.of(ownerName);
+            }
+        }
+        return project.getMembers() != null ? project.getMembers() : List.of();
+    }
+
+    private String normalizeOptional(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 }

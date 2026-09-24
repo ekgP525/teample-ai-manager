@@ -12,21 +12,26 @@ export interface JoinProjectInvitationResponse {
   role?: "OWNER" | "MEMBER";
 }
 
+export async function getActiveProjectInvitation(
+  projectId: string,
+  options: { signal?: AbortSignal } = {}
+) {
+  return apiRequest<ProjectInvitation>(
+    `/api/projects/${encodeURIComponent(projectId)}/invitations/active`,
+    {
+      method: "GET",
+      signal: options.signal,
+      errorMessage: "초대 코드를 불러오지 못했습니다.",
+    }
+  );
+}
+
 export async function createProjectInvitation(projectId: string) {
   return apiRequest<ProjectInvitation>(
     `/api/projects/${encodeURIComponent(projectId)}/invitations`,
     {
       method: "POST",
       errorMessage: "초대 코드를 생성하지 못했습니다.",
-    }
-  );
-}
-
-export async function getActiveProjectInvitation(projectId: string) {
-  return apiRequest<ProjectInvitation>(
-    `/api/projects/${encodeURIComponent(projectId)}/invitations/active`,
-    {
-      errorMessage: "활성 초대 코드를 불러오지 못했습니다.",
     }
   );
 }

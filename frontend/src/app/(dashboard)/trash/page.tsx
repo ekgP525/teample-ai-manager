@@ -8,6 +8,7 @@ import {
   restoreProject,
 } from "@/lib/api/projects";
 import type { Project } from "@/types/minutes";
+import { ProjectStatusBadge } from "@/components/project-status-badge";
 
 type TrashAction = "restore" | "permanent" | "";
 
@@ -224,9 +225,7 @@ function DeletedProjectCard({
       >
         <div className="flex items-start justify-between gap-3">
           <h2 className="break-words font-semibold">{project.name}</h2>
-          <span className="shrink-0 rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700 dark:bg-red-950 dark:text-red-300">
-            삭제됨
-          </span>
+          <ProjectStatusBadge project={project} />
         </div>
         <p className="mt-1 break-words text-sm text-zinc-500">
           {project.members.join(", ")}

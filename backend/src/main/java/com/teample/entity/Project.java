@@ -18,6 +18,8 @@ import java.util.List;
 @Builder
 public class Project {
 
+    private static final int END_SCHEDULED_WINDOW_DAYS = 7;
+
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private String id;
@@ -83,8 +85,11 @@ public class Project {
             if (endedAt == null) {
                 endedAt = now;
             }
-        } else {
+        } else if (!endDate.isAfter(today.plusDays(END_SCHEDULED_WINDOW_DAYS))) {
             status = ProjectStatus.END_SCHEDULED;
+            endedAt = null;
+        } else {
+            status = ProjectStatus.ACTIVE;
             endedAt = null;
         }
     }

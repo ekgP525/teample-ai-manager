@@ -37,7 +37,7 @@ X-Current-User-Id: %EB%B0%95%EA%B7%9C%EB%82%A8
 | 구분 | 값 | 의미 |
 | --- | --- | --- |
 | 프로젝트 상태 | `ACTIVE` | 진행 중 |
-| 프로젝트 상태 | `DISPOSAL_SCHEDULED` | 폐기 예정 |
+| 프로젝트 상태 | `DISPOSAL_SCHEDULED` | 종료 예정일이 7일 이내 |
 | 프로젝트 상태 | `DISPOSED` | 폐기됨 |
 | 통합 업무 상태 | `TODO` | 진행 중 |
 | 통합 업무 상태 | `COMPLETED` | 완료 |

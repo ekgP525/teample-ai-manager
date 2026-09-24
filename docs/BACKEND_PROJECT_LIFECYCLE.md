@@ -7,8 +7,8 @@
 
 | 의미 | 백엔드 내부 기준 | 프론트 호환 응답 | 설명 |
 | --- | --- | --- | --- |
-| 진행 중 | `ProjectStatus.ACTIVE` | `ACTIVE` | 종료일이 없고 삭제되지 않은 프로젝트 |
-| 종료 예정 | `ProjectStatus.END_SCHEDULED` | `DISPOSAL_SCHEDULED` | `endDate`가 오늘 이후인 프로젝트 |
+| 진행 중 | `ProjectStatus.ACTIVE` | `ACTIVE` | 종료일이 없거나 종료일까지 8일 이상 남은 프로젝트 |
+| 종료 예정 | `ProjectStatus.END_SCHEDULED` | `DISPOSAL_SCHEDULED` | `endDate`가 오늘부터 7일 이내인 프로젝트 |
 | 자동 종료 | `ProjectStatus.ENDED` | `DISPOSED` | `endDate`가 지난 프로젝트 |
 | 사용자 삭제 | `ProjectStatus.DELETED` | `DELETED` | 사용자가 삭제해 휴지통으로 이동한 프로젝트 |
 
@@ -38,7 +38,7 @@
 | `isVisibleInActiveList()` | `boolean` | 일반 목록, 대시보드 목록 노출 필터 |
 | `hasEndDatePassed(LocalDate today)` | `boolean` | 종료일이 지났는지 확인 |
 | `blocksNewMinutes(LocalDate today)` | `boolean` | 회의록 생성 가능 여부 판단 |
-| `synchronizeLifecycle(LocalDate today, LocalDateTime now)` | `void` | 종료일 기준으로 `ACTIVE`, `END_SCHEDULED`, `ENDED` 자동 보정 |
+| `synchronizeLifecycle(LocalDate today, LocalDateTime now)` | `void` | 종료일까지 8일 이상 남으면 `ACTIVE`, 7일 이내면 `END_SCHEDULED`, 지난 날짜면 `ENDED`로 자동 보정 |
 | `markDeleted(LocalDateTime now)` | `void` | 사용자 삭제 처리. `DELETED`, `deletedAt` 기록 |
 | `restore(LocalDate today, LocalDateTime now)` | `void` | 휴지통 복원. 종료일 기준 상태로 재계산 |
 

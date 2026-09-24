@@ -3,6 +3,7 @@ package com.teample.controller;
 import com.teample.dto.ProjectRequest;
 import com.teample.dto.ProjectResponse;
 import com.teample.dto.project.ProjectMemberResponse;
+import com.teample.exception.ApiExceptionHandler;
 import com.teample.security.AuthenticatedUser;
 import com.teample.security.SupabaseAuthenticationFilter;
 import com.teample.service.ProjectMemberService;
@@ -72,6 +73,26 @@ public class ProjectController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
+    @DeleteMapping("/{projectId}/members/{userId}")
+    public ResponseEntity<Void> removeProjectMember(
+            @PathVariable String projectId,
+            @PathVariable String userId,
+            HttpServletRequest request
+    ) {
+        projectMemberService.removeMember(
+                projectId, userId, authenticatedUser(request), isAdmin(request));
+        return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping("/{projectId}/members/me")
+    public ResponseEntity<Void> leaveProject(
+            @PathVariable String projectId,
+            HttpServletRequest request
+    ) {
+        projectMemberService.leaveProject(projectId, authenticatedUser(request));
+        return ResponseEntity.noContent().build();
+    }
+
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteProject(
             @PathVariable String id,
@@ -115,6 +136,19 @@ public class ProjectController {
     @ExceptionHandler(ProjectMemberService.ProjectNotFoundException.class)
     public ResponseEntity<Void> handleProjectNotFound() {
         return ResponseEntity.notFound().build();
+    }
+
+    @ExceptionHandler(ProjectMemberService.ProjectMemberNotFoundException.class)
+    public ResponseEntity<Void> handleProjectMemberNotFound() {
+        return ResponseEntity.notFound().build();
+    }
+
+    @ExceptionHandler(ProjectMemberService.ProjectMemberConflictException.class)
+    public ResponseEntity<ApiExceptionHandler.ErrorResponse> handleProjectMemberConflict(
+            ProjectMemberService.ProjectMemberConflictException exception
+    ) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ApiExceptionHandler.ErrorResponse(exception.getMessage()));
     }
 
     private AuthenticatedUser authenticatedUser(HttpServletRequest request) {

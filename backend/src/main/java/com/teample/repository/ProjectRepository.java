@@ -12,4 +12,6 @@ public interface ProjectRepository extends JpaRepository<Project, String> {
     java.util.Optional<Project> findLockedById(@org.springframework.data.repository.query.Param("id") String id);
 
     List<Project> findByStatus(ProjectStatus status);
+
+    List<Project> findByStatusNot(ProjectStatus status);
 }

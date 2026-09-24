@@ -268,7 +268,7 @@ export default function EditMinutesPage() {
 
   return (
     <main className="flex flex-1 flex-col items-center px-4 py-8 sm:py-12">
-      <form onSubmit={handleSave} className="w-full max-w-2xl">
+      <form onSubmit={handleSave} className="w-full max-w-4xl">
         <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <h1 className="text-2xl font-bold">회의록 편집</h1>
           <div className="flex w-full gap-2 sm:w-auto">

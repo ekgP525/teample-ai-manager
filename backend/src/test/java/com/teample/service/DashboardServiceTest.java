@@ -274,6 +274,26 @@ class DashboardServiceTest {
         assertThat(dashboard.getUserId()).isEqualTo("supabase-user-id");
         assertThat(dashboard.getTodos()).hasSize(1);
     }
+    @Test
+    void jwtDashboardSkipsSyncWhenProgressRowsAlreadyExist() {
+        aliceProgress.setUserId("supabase-user-id");
+        AuthenticatedUser user = new AuthenticatedUser("supabase-user-id", "alice", "alice@example.com");
+        when(projectRepository.findById("project-1")).thenReturn(Optional.of(project));
+        when(todoMemberProgressRepository.findByProjectIdAndAssignedTrue("project-1"))
+                .thenReturn(List.of(aliceProgress));
+        when(projectMemberRepository.findByProjectIdOrderByJoinedAtAsc("project-1"))
+                .thenReturn(List.of(com.teample.entity.ProjectMember.builder()
+                        .project(project).userId("supabase-user-id").displayName("alice").build()));
+        when(todoMemberProgressRepository.findByProjectIdAndUserIdAndAssignedTrue("project-1", "supabase-user-id"))
+                .thenReturn(List.of(aliceProgress));
+
+        MyProjectDashboardResponse dashboard = dashboardService.findMyProjectDashboard("project-1", user, false)
+                .orElseThrow();
+
+        verify(todoProgressSyncService, never()).syncProject(project);
+        assertThat(dashboard.getTodos()).hasSize(1);
+    }
+
     private TodoMemberProgress progress(String id, String userId, boolean completed, ProjectTodo todo) {
         TodoMemberProgress progress = TodoMemberProgress.builder()
                 .id(id)

@@ -28,10 +28,14 @@ public class ProjectResponse {
     private String deletedAt;
 
     public static ProjectResponse from(Project project) {
+        return from(project, project.getMembers() != null ? project.getMembers() : Collections.emptyList());
+    }
+
+    public static ProjectResponse from(Project project, List<String> members) {
         return ProjectResponse.builder()
                 .id(project.getId())
                 .name(project.getName())
-                .members(project.getMembers() != null ? project.getMembers() : Collections.emptyList())
+                .members(members != null ? members : Collections.emptyList())
                 .createdAt(format(project.getCreatedAt()))
                 .endDate(project.getEndDate())
                 .disposalDeadline(project.getEndDate())

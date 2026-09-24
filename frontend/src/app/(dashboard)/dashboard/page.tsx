@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { getProjects } from "@/lib/api/projects";
 import type { Project } from "@/types/minutes";
+import { ProjectStatusBadge } from "@/components/project-status-badge";
 
 export default function DashboardPage() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -124,7 +125,7 @@ function ProjectSection({
                     팀원 {project.members.length}명
                   </p>
                 </div>
-                <ProjectStatusBadge status={project.status} />
+                <ProjectStatusBadge project={project} />
               </div>
               <p className="mt-4 truncate text-sm text-zinc-500">
                 {project.members.join(", ") || "등록된 팀원 없음"}
@@ -136,33 +137,6 @@ function ProjectSection({
         <EmptyState message={emptyMessage || "프로젝트가 없습니다."} />
       )}
     </section>
-  );
-}
-
-function ProjectStatusBadge({ status }: { status: Project["status"] }) {
-  const labels: Record<Project["status"], string> = {
-    ACTIVE: "진행 중",
-    DISPOSAL_SCHEDULED: "종료 예정",
-    DISPOSED: "종료됨",
-    DELETED: "삭제됨",
-  };
-  const classes: Record<Project["status"], string> = {
-    ACTIVE:
-      "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
-    DISPOSAL_SCHEDULED:
-      "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
-    DISPOSED:
-      "bg-zinc-200 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300",
-    DELETED:
-      "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300",
-  };
-
-  return (
-    <span
-      className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${classes[status]}`}
-    >
-      {labels[status]}
-    </span>
   );
 }
 
