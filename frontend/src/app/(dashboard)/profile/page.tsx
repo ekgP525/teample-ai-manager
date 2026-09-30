@@ -1,19 +1,49 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { KakaoLinkCard } from "@/components/kakao-link-card";
 import { SignOutButton } from "@/components/sign-out-button";
+import { SubscriptionCard } from "@/components/subscription-card";
+import { getMyPlan } from "@/lib/api/plan";
 import { supabase } from "@/lib/supabase";
+import type { UserPlan } from "@/types/transcription";
 
 interface ProfileData {
   name: string;
   email: string;
   provider: string;
+  userId: string;
 }
 
 export default function ProfilePage() {
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+  const [plan, setPlan] = useState<UserPlan | null>(null);
+  const [planError, setPlanError] = useState("");
+  const [copied, setCopied] = useState(false);
+
+  const loadPlan = useCallback((signal?: AbortSignal) => {
+    return getMyPlan(signal)
+      .then((data) => {
+        setPlan(data);
+        setPlanError("");
+      })
+      .catch((planLoadError: unknown) => {
+        if (signal?.aborted) return;
+        setPlanError(
+          planLoadError instanceof Error
+            ? planLoadError.message
+            : "요금제 정보를 불러오지 못했습니다."
+        );
+      });
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void loadPlan(controller.signal);
+    return () => controller.abort();
+  }, [loadPlan]);
 
   useEffect(() => {
     let isMounted = true;
@@ -33,6 +63,7 @@ export default function ProfilePage() {
             "사용자",
           email: data.user.email || "이메일 정보 없음",
           provider: formatProvider(data.user.app_metadata.provider),
+          userId: data.user.id,
         });
       })
       .catch(() => {
@@ -92,11 +123,78 @@ export default function ProfilePage() {
               <ProfileRow label="이름" value={profile.name} />
               <ProfileRow label="이메일" value={profile.email} />
               <ProfileRow label="로그인 방식" value={profile.provider} />
+              <div className="grid gap-1 py-4 sm:grid-cols-[8rem_1fr] sm:gap-4">
+                <dt className="text-sm text-zinc-500">계정 ID</dt>
+                <dd className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
+                  <code className="min-w-0 break-all rounded bg-zinc-100 px-1.5 py-0.5 text-xs dark:bg-zinc-800">
+                    {profile.userId}
+                  </code>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void navigator.clipboard
+                        .writeText(profile.userId)
+                        .then(() => {
+                          setCopied(true);
+                          window.setTimeout(() => setCopied(false), 1500);
+                        })
+                        .catch(() => setCopied(false));
+                    }}
+                    className="rounded border border-zinc-300 px-2 py-0.5 text-xs transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                  >
+                    {copied ? "복사됨" : "복사"}
+                  </button>
+                </dd>
+              </div>
             </dl>
             <div className="border-t border-zinc-200 p-5 dark:border-zinc-700">
               <SignOutButton className="rounded-lg border border-zinc-300 px-4 py-2 text-sm transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800" />
             </div>
           </section>
+        )}
+
+        {!isLoading && profile && (
+          <section className="mt-6 rounded-lg border border-zinc-200 p-5 dark:border-zinc-700">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="font-semibold">요금제</h2>
+              {plan && (
+                <span
+                  className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                    plan.premium
+                      ? "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200"
+                      : "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+                  }`}
+                >
+                  {plan.premium ? "프리미엄" : "무료"}
+                </span>
+              )}
+            </div>
+            {planError ? (
+              <p className="mt-2 text-sm text-red-600 dark:text-red-400">{planError}</p>
+            ) : !plan ? (
+              <p className="mt-2 text-sm text-zinc-500">요금제를 확인하는 중...</p>
+            ) : plan.premium ? (
+              <div className="mt-2 space-y-1 text-sm text-zinc-600 dark:text-zinc-300">
+                <p>음성·영상 회의록을 사용할 수 있습니다.</p>
+                <p>
+                  이번 달 전사 사용량 {plan.usage.monthMinutesUsed}분 / {plan.usage.monthMinutesLimit}분
+                </p>
+                {plan.expiresAt && <p>만료일 {formatDateTime(plan.expiresAt)}</p>}
+              </div>
+            ) : (
+              <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-300">
+                음성·영상 회의록과 카카오톡 마감 알림은 프리미엄 요금제에서 사용할 수 있습니다.
+                아래에서 구독을 시작하거나, 위의 계정 ID를 운영진에게 전달해 열어 달라고 요청할 수 있습니다.
+              </p>
+            )}
+          </section>
+        )}
+
+        {!isLoading && profile && (
+          <>
+            <SubscriptionCard plan={plan} onPlanChanged={() => void loadPlan()} />
+            <KakaoLinkCard />
+          </>
         )}
       </div>
     </main>
@@ -110,6 +208,16 @@ function ProfileRow({ label, value }: { label: string; value: string }) {
       <dd className="break-words text-sm font-medium">{value}</dd>
     </div>
   );
+}
+
+function formatDateTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("ko-KR", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  }).format(date);
 }
 
 function formatProvider(provider?: string) {
