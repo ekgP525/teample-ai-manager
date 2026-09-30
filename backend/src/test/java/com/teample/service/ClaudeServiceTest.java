@@ -51,4 +51,19 @@ class ClaudeServiceTest {
         assertThat(result.evidence().getTitle()).isEmpty();
         assertThat(result.evidence().getDiscussions()).isEmpty();
     }
+
+    @Test
+    void transcriptPromptExplainsTimestampedSpeakerLines() {
+        ClaudeService service = new ClaudeService();
+
+        String transcript = service.buildPrompt("[00:05] 박규남: 시작하죠", "캡스톤", java.util.List.of("박규남", "이다혜"),
+                ClaudeService.SourceKind.TRANSCRIPT);
+        String chat = service.buildPrompt("규남: ㅎㅇ", "캡스톤", java.util.List.of("박규남"), ClaudeService.SourceKind.CHAT);
+
+        assertThat(transcript).contains("음성 인식으로 전사한 내용");
+        assertThat(transcript).contains("회의 전사 내용:\n[00:05] 박규남: 시작하죠");
+        assertThat(transcript).contains("타임스탬프와 화자 이름은 빼고");
+        assertThat(chat).contains("카카오톡 대화 내용");
+        assertThat(chat).contains("카카오톡 대화:\n규남: ㅎㅇ");
+    }
 }

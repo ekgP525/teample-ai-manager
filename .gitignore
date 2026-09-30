@@ -19,6 +19,7 @@ yarn-error.log*
 
 # === Backend (Spring Boot) ===
 backend/build/
+backend/data/
 backend/.gradle/
 backend/bin/
 backend/out/

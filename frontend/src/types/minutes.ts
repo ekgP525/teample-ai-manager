@@ -24,6 +24,8 @@ export interface Minutes {
   todos: Todo[];
   nextAgenda: string[];
   evidence: MinutesEvidence | null;
+  /** 음성·영상 전사로 만든 회의록이면 전사 ID */
+  transcriptionId?: string | null;
 }
 
 export interface MinutesSummary {

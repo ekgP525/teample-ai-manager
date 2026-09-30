@@ -20,9 +20,57 @@ spring:
     baseline-on-migrate: true
     baseline-version: 0
 
+  servlet:
+    multipart:
+      max-file-size: ${MEDIA_MAX_FILE_SIZE:520MB}
+      max-request-size: ${MEDIA_MAX_FILE_SIZE:520MB}
+
 server:
   port: ${PORT:8080}
 
 # Anthropic Claude API
 anthropic:
   api-key: ${ANTHROPIC_API_KEY:}
+
+# 프리미엄 요금제: 토스페이먼츠 빌링 구독 또는 관리자 수동 부여
+app:
+  frontend-base-url: ${FRONTEND_BASE_URL:http://localhost:3000}
+  plan:
+    premium-monthly-minutes: ${PREMIUM_MONTHLY_MINUTES:600}
+    premium-price-krw: ${PREMIUM_PRICE_KRW:4900}
+    admins: ${PLAN_ADMIN_USER_IDS:}
+    renewal-check-delay-ms: ${SUBSCRIPTION_RENEWAL_CHECK_DELAY_MS:3600000}
+  notifications:
+    deadline-cron: ${DEADLINE_REMINDER_CRON:0 0 9 * * *}
+  security:
+    token-encryption-key: ${APP_TOKEN_ENCRYPTION_KEY:}
+  media:
+    dir: ${MEDIA_DIR:./data/media}
+    max-file-size-mb: ${MEDIA_MAX_FILE_SIZE_MB:500}
+    ffmpeg: ${FFMPEG_PATH:ffmpeg}
+    ffprobe: ${FFPROBE_PATH:ffprobe}
+
+# 음성 인식 (리턴제로 RTZR STT OpenAPI)
+stt:
+  poll-interval-seconds: ${STT_POLL_INTERVAL_SECONDS:5}
+  max-wait-minutes: ${STT_MAX_WAIT_MINUTES:120}
+  rtzr:
+    base-url: ${RTZR_BASE_URL:https://openapi.vito.ai}
+    client-id: ${RTZR_CLIENT_ID:}
+    client-secret: ${RTZR_CLIENT_SECRET:}
+    model-name: ${RTZR_MODEL_NAME:sommers}
+
+# 토스페이먼츠 자동결제(빌링). 기본값은 문서용 '결제창/API 개별연동' 테스트 키(test_ck/test_sk)로 빌링 API가 된다.
+# 결제위젯용 test_gck/test_gsk 키는 빌링에 쓰면 NOT_FOUND_MERCHANT가 난다.
+payments:
+  toss:
+    base-url: ${TOSS_BASE_URL:https://api.tosspayments.com}
+    client-key: ${TOSS_CLIENT_KEY:test_ck_D5GePWvyJnrK0W0k6q8gLzN97Eoq}
+    secret-key: ${TOSS_SECRET_KEY:test_sk_zXLkKEypNArWmo50nX3lmeaxYG5R}
+
+# 카카오 로그인(REST API 키) + 카카오톡 "나에게 보내기" 메시지
+kakao:
+  auth-base-url: ${KAKAO_AUTH_BASE_URL:https://kauth.kakao.com}
+  api-base-url: ${KAKAO_API_BASE_URL:https://kapi.kakao.com}
+  rest-api-key: ${KAKAO_REST_API_KEY:}
+  client-secret: ${KAKAO_CLIENT_SECRET:}

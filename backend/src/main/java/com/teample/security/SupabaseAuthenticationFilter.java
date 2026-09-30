@@ -36,7 +36,9 @@ public class SupabaseAuthenticationFilter extends OncePerRequestFilter {
             Pattern.compile("^/api/dashboard(?:/.*)?$"),
             Pattern.compile("^/api/projects/[^/]+/dashboard(?:/.*)?$"),
             Pattern.compile("^/api/todo-assignments/[^/]+$"),
-            Pattern.compile("^/api/todos/[^/]+/progress$")
+            Pattern.compile("^/api/todos/[^/]+/progress$"),
+            Pattern.compile("^/api/me(?:/.*)?$"),
+            Pattern.compile("^/api/admin/users(?:/.*)?$")
     );
     private static final Pattern PROJECT_MEMBERS_PATH = Pattern.compile("^/api/projects/[^/]+/members(?:/[^/]+)?$");
     private static final Pattern PROJECT_INVITATIONS_PATH = Pattern.compile("^/api/projects/[^/]+/invitations(?:/active)?$");
@@ -45,7 +47,8 @@ public class SupabaseAuthenticationFilter extends OncePerRequestFilter {
             Pattern.compile("^/api/projects/[^/]+$"),
             Pattern.compile("^/api/projects/[^/]+/(restore|permanent)$"),
             Pattern.compile("^/api/projects/[^/]+/minutes(?:/.*)?$"),
-            Pattern.compile("^/api/projects/[^/]+/todos(?:/.*)?$")
+            Pattern.compile("^/api/projects/[^/]+/todos(?:/.*)?$"),
+            Pattern.compile("^/api/projects/[^/]+/transcriptions(?:/.*)?$")
     );
 
     private final SupabaseAuthService authService;

@@ -938,3 +938,182 @@ Authorization: Bearer <Supabase Access Token>
 | 상태 코드 | 조건 |
 | --- | --- |
 | `401` | 인증 헤더 없음 또는 JWT 검증 실패 |
+
+## 12. 프리미엄: 요금제와 음성·영상 회의록
+
+결제 연동 전 단계입니다. 요금제는 관리자가 수동으로 부여하며, 음성·영상 회의록은 `PREMIUM` 사용자만 사용할 수 있습니다.
+
+### 12.1 요금제 조회
+
+```http
+GET /api/me/plan
+Authorization: Bearer <Supabase Access Token>
+```
+
+```json
+{
+  "plan": "PREMIUM",
+  "premium": true,
+  "expiresAt": null,
+  "features": { "transcription": true },
+  "usage": { "monthMinutesUsed": 42, "monthMinutesLimit": 600 }
+}
+```
+
+- `user_plans` 행이 없거나 `expiresAt`이 지났으면 `FREE`입니다.
+- 관리자 테스트 인증은 항상 `PREMIUM`으로 취급합니다.
+- `usage`는 이번 달 1일 이후 실패하지 않은 전사의 길이 합계(분, 올림)입니다. 한도는 `PREMIUM_MONTHLY_MINUTES`(기본 600)입니다.
+
+### 12.2 요금제 수동 부여 (관리자)
+
+```http
+PUT /api/admin/users/{userId}/plan
+Authorization: Bearer <Supabase Access Token>
+Content-Type: application/json
+
+{ "plan": "PREMIUM", "expiresAt": "2026-12-31T23:59:59", "note": "베타 테스터" }
+```
+
+- `userId`는 Supabase JWT `sub`입니다. 사용자는 프로필 화면의 "계정 ID"에서 확인할 수 있습니다.
+- 호출 권한: 관리자 테스트 인증, 또는 `PLAN_ADMIN_USER_IDS`(쉼표 구분)에 포함된 사용자. 그 외는 `403`.
+- `GET /api/admin/users/plans`로 부여 목록을 조회합니다.
+
+### 12.3 음성·영상 전사
+
+| 메서드 | 경로 | 설명 |
+| --- | --- | --- |
+| `POST` | `/api/projects/{projectId}/transcriptions` | 파일 업로드 후 비동기 전사 시작 (`202`) |
+| `GET` | `/api/projects/{projectId}/transcriptions` | 프로젝트의 전사 목록 |
+| `GET` | `/api/projects/{projectId}/transcriptions/{id}` | 전사 상태·세그먼트 조회 (폴링용) |
+| `PUT` | `/api/projects/{projectId}/transcriptions/{id}/speakers` | 화자 라벨 → 이름 매핑 저장 |
+| `POST` | `/api/projects/{projectId}/transcriptions/{id}/minutes` | 전사로 회의록 생성 (전사당 1회) |
+| `GET` | `/api/projects/{projectId}/transcriptions/{id}/audio` | 원본 녹음 파일 스트리밍 |
+| `DELETE` | `/api/projects/{projectId}/transcriptions/{id}` | 전사와 파일 삭제 (처리 중이면 `409`) |
+
+모두 프로젝트 회원 인증이 필요합니다.
+
+업로드 요청은 `multipart/form-data`입니다.
+
+| 필드 | 필수 | 설명 |
+| --- | --- | --- |
+| `file` | O | mp3, m4a, wav, flac, aac, ogg, mp4, mov, mkv, webm. 최대 `MEDIA_MAX_FILE_SIZE_MB`(기본 500MB) |
+| `consent` | O | `true`여야 함. 회의 참여자 녹음 동의 확인 |
+| `expectedSpeakers` | X | 예상 화자 수 0~20. 비우면 STT가 자동 추정 |
+| `language` | X | 기본 `ko` |
+
+업로드 오류:
+
+| 상태 코드 | 조건 |
+| --- | --- |
+| `400` | 파일 없음, 동의 없음, 지원하지 않는 형식, 화자 수 범위 초과 |
+| `403` | 프로젝트 회원이 아니거나 `FREE` 요금제 |
+| `409` | 종료·삭제된 프로젝트, 또는 같은 사용자의 전사가 이미 처리 중 |
+| `413` | 파일 크기 초과 |
+| `429` | 이번 달 전사 사용량 초과 |
+| `503` | STT 자격 증명(`RTZR_CLIENT_ID`/`RTZR_CLIENT_SECRET`) 미설정 |
+
+전사 응답:
+
+```json
+{
+  "id": "…",
+  "projectId": "…",
+  "status": "COMPLETED",
+  "sourceFileName": "회의.m4a",
+  "mediaKind": "AUDIO",
+  "durationMs": 1830000,
+  "expectedSpeakers": 4,
+  "speakerLabels": ["0", "1", "2"],
+  "speakerNames": { "0": "박규남", "1": "이다혜" },
+  "segments": [
+    { "speaker": "0", "startMs": 0, "endMs": 1500, "text": "오늘 회의 시작할게요" }
+  ],
+  "errorMessage": null,
+  "minutesId": null,
+  "hasAudio": true,
+  "createdAt": "2026-10-01T00:00:00",
+  "completedAt": "2026-10-01T00:03:12"
+}
+```
+
+- `status`: `QUEUED` → `PROCESSING` → `COMPLETED` 또는 `FAILED`. 클라이언트는 4~5초 간격으로 조회합니다.
+- 서버가 재시작되면 끝나지 않은 작업을 자동으로 이어서 처리합니다.
+- `speakerLabels`는 STT가 부여한 익명 라벨입니다. 이름 매핑은 `PUT …/speakers`로 저장하고, 비어 있는 라벨은 회의록 생성 시 `화자 N`으로 표시됩니다.
+- webm, mov, mkv는 서버에 ffmpeg가 있어야 처리됩니다. 없으면 `FAILED`와 안내 메시지가 기록됩니다.
+
+회의록 생성:
+
+```http
+POST /api/projects/{projectId}/transcriptions/{id}/minutes
+Content-Type: application/json
+
+{ "title": "", "meetingDate": "2026-10-01" }
+```
+
+- 전사 세그먼트를 `[mm:ss] 이름: 발언` 줄로 합쳐 기존 회의록 파이프라인(Claude 분석, 업무 동기화)에 넣습니다.
+- 응답은 기존 `MinutesResponse`이며 `transcriptionId`가 채워집니다. 회의록 상세 화면은 이 값으로 녹음 재생과 발언 위치 이동을 제공합니다.
+- 전사가 `COMPLETED`가 아니면 `409`, 이미 회의록이 있으면 `409`, 인식된 발언이 없으면 `422`.
+
+### 12.4 환경 변수
+
+| 변수 | 설명 |
+| --- | --- |
+| `RTZR_CLIENT_ID`, `RTZR_CLIENT_SECRET` | 리턴제로 STT OpenAPI 자격 증명. 없으면 전사 업로드가 `503` |
+| `RTZR_MODEL_NAME` | 기본 `sommers` |
+| `PLAN_ADMIN_USER_IDS` | 요금제를 부여할 수 있는 Supabase 사용자 ID 목록(쉼표) |
+| `PREMIUM_MONTHLY_MINUTES` | 월 전사 한도(분). 기본 600 |
+| `MEDIA_DIR` | 업로드 파일 저장 경로. 기본 `./data/media` |
+| `MEDIA_MAX_FILE_SIZE_MB` | 업로드 최대 크기. 기본 500 |
+| `FFMPEG_PATH`, `FFPROBE_PATH` | 선택. webm 등 변환용 |
+| `STT_POLL_INTERVAL_SECONDS`, `STT_MAX_WAIT_MINUTES` | 폴링 간격(기본 5초)과 최대 대기(기본 120분) |
+
+## 13. 프리미엄 구독 결제와 카카오톡 알림
+
+사업자 등록 전 단계이므로 토스페이먼츠는 **문서용/개발자센터 테스트 키**로, 카카오는 **카카오 디벨로퍼스 개인 앱**으로 동작합니다. 둘 다 사업자 등록 없이 무료입니다. 실제 출금이나 알림톡 발송은 일어나지 않고, 테스트 결제와 "나에게 보내기" 메시지만 사용합니다.
+
+### 13.1 구독 결제 (토스페이먼츠 빌링)
+
+흐름: `POST /checkout` → 프론트가 토스 SDK `payment.requestBillingAuth({ method: "CARD", successUrl, failUrl })` 호출 → 토스가 `successUrl?customerKey=&authKey=`로 리다이렉트 → `POST /confirm` → 백엔드가 빌링키 발급 후 첫 달 결제 → 30일마다 자동 결제.
+
+| 메서드 | 경로 | 설명 |
+| --- | --- | --- |
+| `GET` | `/api/me/subscription` | 내 구독. 없으면 `204` |
+| `POST` | `/api/me/subscription/checkout` | SDK 초기화 값 `{ clientKey, customerKey, amount, orderName, customerEmail, customerName, testMode }` |
+| `POST` | `/api/me/subscription/confirm` | `{ authKey, customerKey }` → 빌링키 발급 + 첫 결제 + 프리미엄 부여 |
+| `POST` | `/api/me/subscription/cancel` | 해지. 현재 기간 종료까지 프리미엄 유지 |
+| `GET` | `/api/me/subscription/payments` | 최근 결제 내역 20건 |
+
+- `customerKey`는 `tpl-<Supabase sub>`로 고정되며 다른 사용자의 키를 보내면 `400`.
+- 첫 결제 실패는 `402`와 실패 사유. 결제 키 미설정은 `503`.
+- 구독 상태: `ACTIVE`(정상) / `CANCELED`(해지 예약, 기간 종료 시 무료 전환) / `PAST_DUE`(자동결제 3회 연속 실패, 카드 재등록 필요).
+- 자동 결제는 `SubscriptionRenewalScheduler`가 1시간마다 `next_billing_at`이 지난 구독을 갱신합니다. 실패 시 하루 뒤 재시도, 3회 실패면 `PAST_DUE`.
+- 결제 성공 시 `user_plans`의 만료일을 기간 종료 + 3일(유예)로 갱신합니다. 관리자 수동 부여(12.2)와 같은 테이블을 씁니다.
+- 프론트 성공/실패 페이지: `/billing/success`, `/billing/fail`.
+
+### 13.2 카카오톡 마감 알림 (나에게 보내기)
+
+카카오 디벨로퍼스 앱에 카카오 로그인 활성화, Redirect URI `http://localhost:3000/kakao/callback`(운영은 실제 도메인), 동의항목 `talk_message`(카카오톡 메시지 전송)를 설정합니다. 친구에게 보내기는 별도 권한 심사가 필요해 사용하지 않습니다.
+
+| 메서드 | 경로 | 설명 |
+| --- | --- | --- |
+| `GET` | `/api/me/kakao` | `{ linked, configured, deadlineReminders, needsReconnect, linkedAt, lastNotifiedAt }` |
+| `GET` | `/api/me/kakao/connect-url?redirectUri=` | 카카오 동의 화면 URL과 `state` |
+| `POST` | `/api/me/kakao/link` | `{ code, redirectUri, state }` → 토큰 교환·저장 |
+| `PUT` | `/api/me/kakao/preferences` | `{ deadlineReminders }` |
+| `POST` | `/api/me/kakao/test` | 본인에게 테스트 메시지 |
+| `DELETE` | `/api/me/kakao` | 연결 해제(카카오 unlink 포함) |
+
+- `state`는 사용자 ID에서 파생한 값이라 다른 사용자의 콜백을 붙이면 `400`.
+- 토큰은 `APP_TOKEN_ENCRYPTION_KEY`가 있으면 AES-GCM으로 암호화해 저장합니다. 액세스 토큰(약 12시간)은 만료 5분 전에 리프레시 토큰(약 60일)으로 자동 갱신하고, 리프레시 토큰이 만료되면 `needsReconnect: true`.
+- `DeadlineReminderScheduler`가 매일 09:00(Asia/Seoul)에 알림을 켠 사용자마다 오늘·내일 마감인 본인 담당 미완료 업무를 한 번에 보냅니다. 같은 날 중복 발송은 `notification_logs`로 막습니다. 담당자 매칭은 프로젝트 `project_members.display_name`과 업무 `assignee_name`(쉼표 구분, "전체" 포함)입니다.
+
+### 13.3 환경 변수
+
+| 변수 | 설명 |
+| --- | --- |
+| `TOSS_CLIENT_KEY`, `TOSS_SECRET_KEY` | 없으면 문서용 '결제창/API 개별연동' 테스트 키(`test_ck_D5Ge…`, `test_sk_zXLk…`)를 사용. 결제위젯용 `test_gck_/test_gsk_` 키는 빌링 API에서 `NOT_FOUND_MERCHANT`가 남. 개발자센터 가입(이메일만) 후 자기 테스트 키로 바꾸면 개발자센터에서 결제 내역을 볼 수 있음 |
+| `PREMIUM_PRICE_KRW` | 월 요금. 기본 4900 |
+| `FRONTEND_BASE_URL` | 카카오 메시지 링크에 쓰는 프론트 주소. 기본 `http://localhost:3000` |
+| `KAKAO_REST_API_KEY`, `KAKAO_CLIENT_SECRET` | 카카오 앱 REST API 키(필수), 클라이언트 시크릿(앱에서 켰을 때만) |
+| `DEADLINE_REMINDER_CRON` | 기본 `0 0 9 * * *` |
+| `APP_TOKEN_ENCRYPTION_KEY` | 선택. 긴 임의 문자열 |
