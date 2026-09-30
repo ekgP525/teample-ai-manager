@@ -48,12 +48,32 @@ public class MinutesService {
         }
 
         LocalDate meetingDate = parseMeetingDate(request.getMeetingDate());
+        return generate(project, request.getTitle(), meetingDate, request.getRawText(),
+                ClaudeService.SourceKind.CHAT, null);
+    }
+
+    /** 음성·영상 전사 텍스트("[mm:ss] 이름: 발언" 줄)로 회의록을 만든다. */
+    @Transactional
+    public MinutesResponse createFromTranscript(
+            Project project, String title, LocalDate meetingDate, String transcriptText, String transcriptionId
+    ) {
+        if (project.blocksNewMinutes(LocalDate.now())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Ended or deleted projects cannot create minutes.");
+        }
+        return generate(project, title, meetingDate, transcriptText, ClaudeService.SourceKind.TRANSCRIPT, transcriptionId);
+    }
+
+    private MinutesResponse generate(
+            Project project, String title, LocalDate meetingDate, String rawText,
+            ClaudeService.SourceKind sourceKind, String transcriptionId
+    ) {
         ClaudeService.MinutesResult result;
         try {
             result = claudeService.analyze(
-                    request.getRawText(),
+                    rawText,
                     project.getName(),
-                    resolveProjectMemberNames(project)
+                    resolveProjectMemberNames(project),
+                    sourceKind
             );
         } catch (RuntimeException exception) {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, exception.getMessage(), exception);
@@ -62,9 +82,8 @@ public class MinutesService {
         Minutes minutes = Minutes.builder()
                 .project(project)
                 .meetingDate(meetingDate)
-                .rawText(request.getRawText())
-                .title(request.getTitle() != null && !request.getTitle().isBlank()
-                        ? request.getTitle() : result.title())
+                .rawText(rawText)
+                .title(title != null && !title.isBlank() ? title : result.title())
                 .topic(result.topic())
                 .discussions(result.discussions())
                 .decisions(result.decisions())
@@ -72,6 +91,7 @@ public class MinutesService {
                 .todos(result.todos())
                 .nextAgenda(result.nextAgenda())
                 .evidence(result.evidence())
+                .transcriptionId(transcriptionId)
                 .build();
 
         Minutes saved = minutesRepository.save(minutes);
@@ -201,6 +221,7 @@ public class MinutesService {
                         .toList())
                 .nextAgenda(safeList(minutes.getNextAgenda()))
                 .evidence(toEvidenceResponse(minutes.getEvidence()))
+                .transcriptionId(minutes.getTranscriptionId())
                 .build();
     }
 

@@ -21,4 +21,5 @@ public class MinutesResponse {
     private List<TodoItem> todos;
     private List<String> nextAgenda;
     private MinutesEvidence evidence;
+    private String transcriptionId;
 }

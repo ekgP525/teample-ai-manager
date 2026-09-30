@@ -184,6 +184,16 @@ export default function NewMinutesPage() {
           <p className="mt-1 text-sm text-zinc-500">
             카톡 대화를 붙여넣으면 AI가 회의록을 자동 생성합니다.
           </p>
+          <p className="mt-2 text-sm text-zinc-500">
+            회의 녹음이나 영상이 있다면{" "}
+            <Link
+              href={`/projects/${id}/transcribe`}
+              className="font-medium text-amber-700 hover:underline dark:text-amber-300"
+            >
+              음성·영상으로 회의록 만들기
+            </Link>
+            를 이용할 수 있습니다. (프리미엄)
+          </p>
         </div>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-5">

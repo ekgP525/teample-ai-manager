@@ -1,13 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { ExportMenu } from "@/components/export-menu";
 import { ApiError } from "@/lib/api/client";
 import { getMinutes } from "@/lib/api/minutes";
 import { getProject } from "@/lib/api/projects";
+import {
+  getTranscription,
+  getTranscriptionAudio,
+} from "@/lib/api/transcriptions";
 import type { Minutes } from "@/types/minutes";
+import type { TranscriptSegment, Transcription } from "@/types/transcription";
 import { DeleteMinutesButton } from "./delete-button";
 
 export default function MinutesPage() {
@@ -18,6 +23,9 @@ export default function MinutesPage() {
   const [loadError, setLoadError] = useState("");
   const [minutesNotFound, setMinutesNotFound] = useState(false);
   const [isReadOnly, setIsReadOnly] = useState(false);
+  const [transcription, setTranscription] = useState<Transcription | null>(null);
+  const [audioUrl, setAudioUrl] = useState("");
+  const audioRef = useRef<HTMLAudioElement>(null);
   const currentKey = `${id}/${minutesId}`;
 
   const loadMinutes = useCallback(
@@ -104,6 +112,52 @@ export default function MinutesPage() {
     return () => controller.abort();
   }, [currentKey, id, minutesId]);
 
+  // 음성·영상 전사에서 만든 회의록이면 전사 세그먼트와 녹음 파일을 불러온다.
+  const transcriptionId = minutes?.transcriptionId ?? null;
+  useEffect(() => {
+    if (!transcriptionId) return;
+
+    const controller = new AbortController();
+    let objectUrl = "";
+
+    void getTranscription(id, transcriptionId, controller.signal)
+      .then((data) => {
+        setTranscription(data);
+        if (!data.hasAudio) return null;
+        return getTranscriptionAudio(id, transcriptionId, controller.signal);
+      })
+      .then((blob) => {
+        if (!blob || controller.signal.aborted) return;
+        objectUrl = URL.createObjectURL(blob);
+        setAudioUrl(objectUrl);
+      })
+      .catch(() => {
+        // 녹음을 못 불러와도 회의록 본문은 그대로 보여준다.
+      });
+
+    return () => {
+      controller.abort();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      setAudioUrl("");
+      setTranscription(null);
+    };
+  }, [id, transcriptionId]);
+
+  const seekTo = useCallback((ms: number) => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.currentTime = ms / 1000;
+    void audio.play().catch(() => {
+      // 자동 재생이 막히면 사용자가 재생 버튼을 누르면 된다.
+    });
+    audio.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, []);
+
+  const jumpFor = (quote: string | undefined) => {
+    if (!quote || !transcription || !audioUrl) return null;
+    return findEvidenceStart(quote, transcription.segments);
+  };
+
   if (isLoading || loadedKey !== currentKey) {
     return (
       <main className="flex flex-1 items-center justify-center px-4 py-12">
@@ -165,7 +219,7 @@ export default function MinutesPage() {
               {...evidenceTargetProps(minutes.evidence?.title, "evidence-title")}
             >
               {minutes.title || "회의록"}
-              <EvidencePopover quote={minutes.evidence?.title} id="evidence-title" />
+              <EvidencePopover quote={minutes.evidence?.title} id="evidence-title" jumpMs={jumpFor(minutes.evidence?.title)} onJump={seekTo} />
             </h1>
           </div>
           <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:shrink-0 print:hidden">
@@ -193,6 +247,35 @@ export default function MinutesPage() {
           </p>
         )}
 
+        {transcription && (
+          <section className="mb-6 rounded-lg border border-amber-200 bg-amber-50 p-4 print:hidden dark:border-amber-900 dark:bg-amber-950">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold text-amber-900 dark:text-amber-100">
+                회의 녹음
+                <span className="ml-2 font-normal text-amber-700 dark:text-amber-300">
+                  {transcription.sourceFileName || ""}
+                </span>
+              </h2>
+              <p className="text-xs text-amber-700 dark:text-amber-300">
+                항목 옆 재생 버튼을 누르면 해당 발언부터 들을 수 있습니다.
+              </p>
+            </div>
+            {audioUrl ? (
+              <audio
+                ref={audioRef}
+                controls
+                preload="metadata"
+                src={audioUrl}
+                className="mt-3 w-full"
+              />
+            ) : (
+              <p className="mt-3 text-xs text-amber-700 dark:text-amber-300">
+                {transcription.hasAudio ? "녹음 파일을 불러오는 중..." : "녹음 파일이 더 이상 서버에 없습니다."}
+              </p>
+            )}
+          </section>
+        )}
+
         <section className="mb-6">
           <h2 className="mb-2 text-lg font-semibold">회의 주제</h2>
           <p
@@ -200,7 +283,7 @@ export default function MinutesPage() {
             {...evidenceTargetProps(minutes.evidence?.topic, "evidence-topic")}
           >
             <span className="min-w-0 flex-1">{minutes.topic || "내용이 없습니다."}</span>
-            <EvidencePopover quote={minutes.evidence?.topic} id="evidence-topic" />
+            <EvidencePopover quote={minutes.evidence?.topic} id="evidence-topic" jumpMs={jumpFor(minutes.evidence?.topic)} onJump={seekTo} />
           </p>
         </section>
 
@@ -216,7 +299,7 @@ export default function MinutesPage() {
               >
                 <span className="mt-0.5 text-blue-600">&#8226;</span>
                 <span className="min-w-0 flex-1">{item}</span>
-                <EvidencePopover quote={minutes.evidence?.discussions[i]} id={`evidence-discussions-${i}`} />
+                <EvidencePopover quote={minutes.evidence?.discussions[i]} id={`evidence-discussions-${i}`} jumpMs={jumpFor(minutes.evidence?.discussions[i])} onJump={seekTo} />
               </li>
               ))}
             </ul>
@@ -237,7 +320,7 @@ export default function MinutesPage() {
               >
                 <span className="mt-0.5 text-green-600">&#10003;</span>
                 <span className="min-w-0 flex-1">{decision}</span>
-                <EvidencePopover quote={minutes.evidence?.decisions[i]} id={`evidence-decisions-${i}`} />
+                <EvidencePopover quote={minutes.evidence?.decisions[i]} id={`evidence-decisions-${i}`} jumpMs={jumpFor(minutes.evidence?.decisions[i])} onJump={seekTo} />
               </li>
               ))}
             </ul>
@@ -258,7 +341,7 @@ export default function MinutesPage() {
               >
                 <span className="mt-0.5 text-amber-600">&#9679;</span>
                 <span className="min-w-0 flex-1">{item}</span>
-                <EvidencePopover quote={minutes.evidence?.pending[i]} id={`evidence-pending-${i}`} />
+                <EvidencePopover quote={minutes.evidence?.pending[i]} id={`evidence-pending-${i}`} jumpMs={jumpFor(minutes.evidence?.pending[i])} onJump={seekTo} />
               </li>
               ))}
             </ul>
@@ -289,7 +372,7 @@ export default function MinutesPage() {
                         {...evidenceTargetProps(minutes.evidence?.todos[i], `evidence-todos-${i}`)}
                       >
                         <span className="min-w-0 flex-1">{todo.task}</span>
-                        <EvidencePopover quote={minutes.evidence?.todos[i]} id={`evidence-todos-${i}`} />
+                        <EvidencePopover quote={minutes.evidence?.todos[i]} id={`evidence-todos-${i}`} jumpMs={jumpFor(minutes.evidence?.todos[i])} onJump={seekTo} />
                       </div>
                     </td>
                     <td className="whitespace-nowrap px-4 py-2 align-top text-zinc-500">{todo.deadline}</td>
@@ -315,7 +398,7 @@ export default function MinutesPage() {
               >
                 <span className="mt-0.5 text-purple-600">&#9654;</span>
                 <span className="min-w-0 flex-1">{item}</span>
-                <EvidencePopover quote={minutes.evidence?.nextAgenda[i]} id={`evidence-nextAgenda-${i}`} />
+                <EvidencePopover quote={minutes.evidence?.nextAgenda[i]} id={`evidence-nextAgenda-${i}`} jumpMs={jumpFor(minutes.evidence?.nextAgenda[i])} onJump={seekTo} />
               </li>
               ))}
             </ul>
@@ -339,17 +422,41 @@ function evidenceTargetProps(quote: string | undefined, id: string) {
   return { tabIndex: 0, "aria-describedby": id };
 }
 
-function EvidencePopover({ quote, id }: { quote: string | undefined; id: string }) {
+function EvidencePopover({
+  quote,
+  id,
+  jumpMs,
+  onJump,
+}: {
+  quote: string | undefined;
+  id: string;
+  jumpMs?: number | null;
+  onJump?: (ms: number) => void;
+}) {
   if (!quote?.trim()) return null;
 
   return (
     <>
-      <span
-        aria-hidden="true"
-        className="mt-0.5 shrink-0 select-none text-xs text-zinc-400 transition-colors group-hover:text-blue-500 group-focus-within:text-blue-500 print:hidden"
-      >
-        &#10077;
-      </span>
+      {jumpMs != null && onJump ? (
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onJump(jumpMs);
+          }}
+          aria-label={`${formatTimestamp(jumpMs)}부터 녹음 재생`}
+          className="mt-0.5 shrink-0 select-none whitespace-nowrap rounded px-1 font-mono text-[11px] text-amber-700 transition-colors hover:bg-amber-100 dark:text-amber-300 dark:hover:bg-amber-900 print:hidden"
+        >
+          &#9654; {formatTimestamp(jumpMs)}
+        </button>
+      ) : (
+        <span
+          aria-hidden="true"
+          className="mt-0.5 shrink-0 select-none text-xs text-zinc-400 transition-colors group-hover:text-blue-500 group-focus-within:text-blue-500 print:hidden"
+        >
+          &#10077;
+        </span>
+      )}
       <span
         role="tooltip"
         id={id}
@@ -362,6 +469,43 @@ function EvidencePopover({ quote, id }: { quote: string | undefined; id: string 
       </span>
     </>
   );
+}
+
+/** 근거 인용문이 들어 있는 전사 세그먼트의 시작 시각(ms). 못 찾으면 null. */
+function findEvidenceStart(quote: string, segments: TranscriptSegment[]) {
+  const normalizedQuote = normalizeForMatch(quote);
+  if (!normalizedQuote) return null;
+
+  for (const segment of segments) {
+    const text = normalizeForMatch(segment.text);
+    if (!text) continue;
+    if (text.includes(normalizedQuote) || normalizedQuote.includes(text)) {
+      return segment.startMs;
+    }
+  }
+
+  const head = normalizedQuote.slice(0, 12);
+  if (head.length < 6) return null;
+  const partial = segments.find((segment) =>
+    normalizeForMatch(segment.text).includes(head)
+  );
+  return partial ? partial.startMs : null;
+}
+
+function normalizeForMatch(value: string) {
+  return value
+    .replace(/^\[[0-9:]+\]\s*[^:]{0,20}:\s*/, "")
+    .replace(/[\s"“”'‘’.,!?~…]/g, "")
+    .toLowerCase();
+}
+
+function formatTimestamp(ms: number) {
+  const totalSeconds = Math.floor(ms / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const mmss = `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  return hours > 0 ? `${hours}:${mmss}` : mmss;
 }
 
 function EmptySection() {

@@ -344,6 +344,14 @@ export default function ProjectDetailPage() {
             )}
             {canCreateMinutes && (
               <Link
+                href={`/projects/${id}/transcribe`}
+                className="flex-1 whitespace-nowrap rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-center text-sm font-medium text-amber-900 transition-colors hover:bg-amber-100 sm:flex-none dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100 dark:hover:bg-amber-900"
+              >
+                음성·영상 회의록
+              </Link>
+            )}
+            {canCreateMinutes && (
+              <Link
                 href={`/projects/${id}/new`}
                 className="flex-1 rounded-lg bg-zinc-900 px-4 py-2 text-center text-sm font-medium text-white transition-colors hover:bg-zinc-800 sm:flex-none dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
               >

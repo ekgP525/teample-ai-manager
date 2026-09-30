@@ -16,6 +16,8 @@ export class ApiError extends Error {
 
 type ApiRequestOptions = RequestInit & {
   errorMessage: string;
+  /** "blob"이면 JSON 대신 바이너리(오디오 등)로 응답을 돌려준다. */
+  responseType?: "json" | "blob";
 };
 
 type RequestAuth =
@@ -40,14 +42,14 @@ async function getErrorMessage(response: Response, fallback: string) {
 
 export async function apiRequest<T>(
   path: string,
-  { errorMessage, headers, ...options }: ApiRequestOptions
+  { errorMessage, headers, responseType = "json", ...options }: ApiRequestOptions
 ): Promise<T> {
   if (!apiUrl) {
     throw new ApiError("백엔드 API 주소가 설정되지 않았습니다.", 0);
   }
 
   const auth = await resolveRequestAuth();
-  return sendRequest<T>(path, errorMessage, headers, options, auth, true);
+  return sendRequest<T>(path, errorMessage, headers, options, auth, true, responseType);
 }
 
 async function sendRequest<T>(
@@ -56,12 +58,16 @@ async function sendRequest<T>(
   headers: HeadersInit | undefined,
   options: Omit<RequestInit, "headers">,
   auth: RequestAuth,
-  allowTokenRefresh: boolean
+  allowTokenRefresh: boolean,
+  responseType: "json" | "blob"
 ): Promise<T> {
   const requestHeaders = new Headers(headers);
   applyAuthHeaders(requestHeaders, auth);
 
-  if (options.body && !requestHeaders.has("Content-Type")) {
+  // FormData는 브라우저가 boundary를 포함한 Content-Type을 직접 설정해야 한다.
+  const isFormData =
+    typeof FormData !== "undefined" && options.body instanceof FormData;
+  if (options.body && !isFormData && !requestHeaders.has("Content-Type")) {
     requestHeaders.set("Content-Type", "application/json");
   }
 
@@ -84,7 +90,8 @@ async function sendRequest<T>(
         headers,
         options,
         { mode: "SUPABASE", accessToken: refreshedToken },
-        false
+        false,
+        responseType
       );
     }
   }
@@ -122,6 +129,10 @@ async function sendRequest<T>(
 
   if (response.status === 204) {
     return undefined as T;
+  }
+
+  if (responseType === "blob") {
+    return (await response.blob()) as T;
   }
 
   try {

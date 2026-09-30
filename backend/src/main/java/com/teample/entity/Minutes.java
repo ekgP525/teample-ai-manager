@@ -63,6 +63,10 @@ public class Minutes {
     @Column
     private EvidenceData evidence;
 
+    /** 음성·영상 전사에서 만들어진 회의록이면 원본 전사 ID. 텍스트 입력이면 null. */
+    @Column(name = "transcription_id")
+    private String transcriptionId;
+
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();

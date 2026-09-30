@@ -9,6 +9,8 @@ import com.teample.repository.MinutesRepository;
 import com.teample.repository.ProjectInvitationRepository;
 import com.teample.repository.ProjectMemberRepository;
 import com.teample.repository.ProjectRepository;
+import com.teample.repository.TranscriptionRepository;
+import com.teample.service.transcription.MediaStorageService;
 import com.teample.security.AuthenticatedUser;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -51,6 +53,12 @@ class ProjectServiceTest {
     @Mock
     private ProjectInvitationRepository projectInvitationRepository;
 
+    @Mock
+    private TranscriptionRepository transcriptionRepository;
+
+    @Mock
+    private MediaStorageService mediaStorageService;
+
     private ProjectService service;
 
     @BeforeEach
@@ -62,7 +70,9 @@ class ProjectServiceTest {
                 todoProgressSyncService,
                 projectMemberService,
                 projectMemberRepository,
-                projectInvitationRepository
+                projectInvitationRepository,
+                transcriptionRepository,
+                mediaStorageService
         );
     }
 

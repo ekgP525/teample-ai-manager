@@ -10,6 +10,8 @@ import com.teample.repository.MinutesRepository;
 import com.teample.repository.ProjectInvitationRepository;
 import com.teample.repository.ProjectMemberRepository;
 import com.teample.repository.ProjectRepository;
+import com.teample.repository.TranscriptionRepository;
+import com.teample.service.transcription.MediaStorageService;
 import com.teample.security.AuthenticatedUser;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -31,6 +33,8 @@ public class ProjectService {
     private final ProjectMemberService projectMemberService;
     private final ProjectMemberRepository projectMemberRepository;
     private final ProjectInvitationRepository projectInvitationRepository;
+    private final TranscriptionRepository transcriptionRepository;
+    private final MediaStorageService mediaStorageService;
 
     public ProjectResponse create(ProjectRequest request) {
         return create(request, null);
@@ -128,6 +132,9 @@ public class ProjectService {
             todoProgressSyncService.deleteByProject(project);
             integratedTodoRepository.deleteByProjectId(project.getId());
             minutesRepository.deleteByProjectId(project.getId());
+            transcriptionRepository.findByProjectIdOrderByCreatedAtDesc(project.getId())
+                    .forEach(transcription -> mediaStorageService.delete(transcription.getStoragePath()));
+            transcriptionRepository.deleteByProjectId(project.getId());
             projectRepository.delete(project);
             return true;
         }).orElse(false);
