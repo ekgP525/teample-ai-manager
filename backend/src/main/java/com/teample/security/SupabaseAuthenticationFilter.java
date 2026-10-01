@@ -40,7 +40,7 @@ public class SupabaseAuthenticationFilter extends OncePerRequestFilter {
             Pattern.compile("^/api/me(?:/.*)?$"),
             Pattern.compile("^/api/admin/users(?:/.*)?$")
     );
-    private static final Pattern PROJECT_MEMBERS_PATH = Pattern.compile("^/api/projects/[^/]+/members(?:/[^/]+)?$");
+    private static final Pattern PROJECT_MEMBERS_PATH = Pattern.compile("^/api/projects/[^/]+/members(?:/[^/]+(?:/owner)?)?$");
     private static final Pattern PROJECT_INVITATIONS_PATH = Pattern.compile("^/api/projects/[^/]+/invitations(?:/active)?$");
     private static final Pattern JOIN_INVITATION_PATH = Pattern.compile("^/api/project-invitations/join$");
     private static final List<Pattern> PROJECT_RESOURCE_PATHS = List.of(
@@ -95,11 +95,11 @@ public class SupabaseAuthenticationFilter extends OncePerRequestFilter {
         if ("GET".equalsIgnoreCase(method) && "/api/projects/trash".equals(requestPath)) {
             return true;
         }
-        if (("GET".equalsIgnoreCase(method) || "DELETE".equalsIgnoreCase(method))
+        if (("GET".equalsIgnoreCase(method) || "DELETE".equalsIgnoreCase(method) || "POST".equalsIgnoreCase(method))
                 && PROJECT_MEMBERS_PATH.matcher(requestPath).matches()) {
             return true;
         }
-        if ((("GET".equalsIgnoreCase(method) || "POST".equalsIgnoreCase(method))
+        if ((("GET".equalsIgnoreCase(method) || "POST".equalsIgnoreCase(method) || "DELETE".equalsIgnoreCase(method))
                 && PROJECT_INVITATIONS_PATH.matcher(requestPath).matches())
                 || ("POST".equalsIgnoreCase(method) && JOIN_INVITATION_PATH.matcher(requestPath).matches())) {
             return true;

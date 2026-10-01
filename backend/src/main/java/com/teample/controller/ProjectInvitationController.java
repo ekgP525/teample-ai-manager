@@ -12,6 +12,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -36,6 +37,12 @@ public class ProjectInvitationController {
     public ResponseEntity<ProjectInvitationResponse> getActiveInvitation(
             @PathVariable String projectId, HttpServletRequest request) {
         return ResponseEntity.ok(invitationService.findActive(projectId, authenticatedUser(request), isAdmin(request)));
+    }
+
+    @DeleteMapping("/api/projects/{projectId}/invitations/active")
+    public ResponseEntity<Void> cancelActiveInvitation(@PathVariable String projectId, HttpServletRequest request) {
+        invitationService.cancelActive(projectId, authenticatedUser(request), isAdmin(request));
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/api/project-invitations/join")

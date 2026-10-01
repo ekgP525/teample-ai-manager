@@ -16,6 +16,7 @@ import {
   permanentlyDeleteProject,
   removeProjectMember,
   restoreProject,
+  transferProjectOwnership,
   type ProjectMember,
 } from "@/lib/api/projects";
 import type { MinutesSummary, Project } from "@/types/minutes";
@@ -51,6 +52,8 @@ export default function ProjectDetailPage() {
   const [isPermanentlyDeleting, setIsPermanentlyDeleting] = useState(false);
   const [isInviteDialogOpen, setIsInviteDialogOpen] = useState(false);
   const [memberToRemove, setMemberToRemove] = useState<ProjectMember | null>(null);
+  const [memberToPromote, setMemberToPromote] = useState<ProjectMember | null>(null);
+  const [isTransferring, setIsTransferring] = useState(false);
   const [isRemovingMember, setIsRemovingMember] = useState(false);
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [isLeaving, setIsLeaving] = useState(false);
@@ -217,6 +220,25 @@ export default function ProjectDetailPage() {
       );
     } finally {
       setIsRemovingMember(false);
+    }
+  };
+
+  const handleTransferOwnership = async () => {
+    if (!memberToPromote) return;
+
+    setIsTransferring(true);
+    setMemberActionError("");
+
+    try {
+      const updatedMembers = await transferProjectOwnership(id, memberToPromote.userId);
+      setAccountMembers(updatedMembers);
+      setMemberToPromote(null);
+    } catch (error) {
+      setMemberActionError(
+        error instanceof Error ? error.message : "소유자를 변경하지 못했습니다."
+      );
+    } finally {
+      setIsTransferring(false);
     }
   };
 
@@ -544,20 +566,64 @@ export default function ProjectDetailPage() {
                     </p>
                   </div>
                   {canManageProject && member.role === "MEMBER" && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setMemberToRemove(member);
-                        setMemberActionError("");
-                      }}
-                      disabled={isRemovingMember || isLeaving}
-                      className="shrink-0 rounded-lg border border-red-300 px-3 py-1.5 text-sm text-red-600 transition-colors hover:bg-red-50 disabled:opacity-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950"
-                    >
-                      멤버 제외
-                    </button>
+                    <div className="flex shrink-0 flex-wrap justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMemberToPromote(member);
+                          setMemberToRemove(null);
+                          setMemberActionError("");
+                        }}
+                        disabled={isRemovingMember || isLeaving || isTransferring}
+                        className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm transition-colors hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                      >
+                        소유자 위임
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMemberToRemove(member);
+                          setMemberToPromote(null);
+                          setMemberActionError("");
+                        }}
+                        disabled={isRemovingMember || isLeaving || isTransferring}
+                        className="rounded-lg border border-red-300 px-3 py-1.5 text-sm text-red-600 transition-colors hover:bg-red-50 disabled:opacity-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950"
+                      >
+                        멤버 제외
+                      </button>
+                    </div>
                   )}
                 </div>
               ))}
+            </div>
+          </section>
+        )}
+
+        {memberToPromote && (
+          <section className="mb-8 rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950">
+            <h2 className="font-semibold text-amber-900 dark:text-amber-100">
+              {memberToPromote.displayName}님에게 소유자 권한을 넘기시겠습니까?
+            </h2>
+            <p className="mt-1 text-sm text-amber-800 dark:text-amber-200">
+              넘기면 나는 일반 멤버가 되어 팀원 초대·제외, 프로젝트 삭제를 할 수 없고 프로젝트에서 나갈 수 있게 됩니다. 되돌리려면 새 소유자가 다시 위임해야 합니다.
+            </p>
+            <div className="mt-4 flex gap-2">
+              <button
+                type="button"
+                onClick={() => void handleTransferOwnership()}
+                disabled={isTransferring}
+                className="rounded-lg bg-amber-800 px-3 py-2 text-sm font-medium text-white hover:bg-amber-900 disabled:cursor-wait disabled:opacity-50 dark:bg-amber-200 dark:text-amber-950 dark:hover:bg-amber-100"
+              >
+                {isTransferring ? "변경 중..." : "소유자 위임 확인"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setMemberToPromote(null)}
+                disabled={isTransferring}
+                className="rounded-lg border border-zinc-300 px-3 py-2 text-sm hover:bg-white disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
+              >
+                취소
+              </button>
             </div>
           </section>
         )}

@@ -332,4 +332,48 @@ class ProjectMemberServiceTest {
                 .role(role)
                 .build();
     }
+
+    @Test
+    void ownerTransfersOwnershipToMemberAndBecomesMember() {
+        Project project = Project.builder().id("project-id").name("project").build();
+        AuthenticatedUser owner = new AuthenticatedUser("owner-id", "owner", null);
+        ProjectMember ownerRow = member(project, "owner-id", "owner", ProjectMemberRole.OWNER);
+        ProjectMember target = member(project, "member-id", "member", ProjectMemberRole.MEMBER);
+        when(projectRepository.findById("project-id")).thenReturn(Optional.of(project));
+        when(projectMemberRepository.existsByProjectId("project-id")).thenReturn(true);
+        when(projectMemberRepository.existsByProjectIdAndUserIdAndRole("project-id", "owner-id", ProjectMemberRole.OWNER))
+                .thenReturn(true);
+        when(projectMemberRepository.findByProjectIdAndUserId("project-id", "member-id")).thenReturn(Optional.of(target));
+        when(projectMemberRepository.findByProjectIdAndUserId("project-id", "owner-id")).thenReturn(Optional.of(ownerRow));
+
+        service.transferOwnership("project-id", "member-id", owner, false);
+
+        assertThat(target.getRole()).isEqualTo(ProjectMemberRole.OWNER);
+        assertThat(ownerRow.getRole()).isEqualTo(ProjectMemberRole.MEMBER);
+        verify(projectMemberRepository).save(target);
+        verify(projectMemberRepository).save(ownerRow);
+    }
+
+    @Test
+    void transferOwnershipRejectsNonOwnerAndExistingOwnerTarget() {
+        Project project = Project.builder().id("project-id").name("project").build();
+        AuthenticatedUser member = new AuthenticatedUser("member-id", "member", null);
+        when(projectRepository.findById("project-id")).thenReturn(Optional.of(project));
+        when(projectMemberRepository.existsByProjectId("project-id")).thenReturn(true);
+        when(projectMemberRepository.existsByProjectIdAndUserIdAndRole("project-id", "member-id", ProjectMemberRole.OWNER))
+                .thenReturn(false);
+
+        assertThatThrownBy(() -> service.transferOwnership("project-id", "other-id", member, false))
+                .isInstanceOf(ProjectMemberService.ProjectMemberAccessDeniedException.class);
+
+        AuthenticatedUser owner = new AuthenticatedUser("owner-id", "owner", null);
+        ProjectMember alreadyOwner = member(project, "owner-id", "owner", ProjectMemberRole.OWNER);
+        when(projectMemberRepository.existsByProjectIdAndUserIdAndRole("project-id", "owner-id", ProjectMemberRole.OWNER))
+                .thenReturn(true);
+        when(projectMemberRepository.findByProjectIdAndUserId("project-id", "owner-id")).thenReturn(Optional.of(alreadyOwner));
+
+        assertThatThrownBy(() -> service.transferOwnership("project-id", "owner-id", owner, false))
+                .isInstanceOf(ProjectMemberService.ProjectMemberConflictException.class);
+        verify(projectMemberRepository, never()).save(alreadyOwner);
+    }
 }

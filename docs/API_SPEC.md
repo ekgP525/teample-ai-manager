@@ -1162,3 +1162,21 @@ Content-Type: application/json
 - 프로젝트 종료일·마감일 판정은 `Asia/Seoul` 기준입니다.
 - `GET /api/projects/{id}/todos`는 더 이상 조회 시점에 회의록을 재동기화하지 않습니다(생성·수정·삭제 시에만).
 - Claude 호출(회의록 생성)은 DB 트랜잭션 밖에서 실행되며, 저장만 짧은 트랜잭션으로 묶입니다.
+
+### 14.6 소유자 위임과 초대 코드 무효화 (2026-10-01 추가)
+
+| 메서드 | 경로 | 권한 | 설명 |
+| --- | --- | --- | --- |
+| `POST` | `/api/projects/{projectId}/members/{userId}/owner` | OWNER | `userId`(MEMBER)에게 소유권을 넘기고 요청자는 MEMBER가 된다. 갱신된 멤버 목록을 돌려준다. 대상이 이미 OWNER면 `409`, 멤버가 아니면 `404` |
+| `DELETE` | `/api/projects/{projectId}/invitations/active` | OWNER | 현재 활성 초대 코드를 무효화한다. 새 코드는 만들지 않으며 `204` |
+
+- 소유권을 넘긴 뒤 이전 소유자는 `DELETE /members/me`로 프로젝트를 나갈 수 있다.
+- 관리자 테스트 인증으로 위임하면 기존 OWNER 전원이 MEMBER로 내려간다.
+
+### 14.7 그 밖의 변경
+- `GET /api/projects`는 전체 테이블 대신 `project_members` 행에서 내 프로젝트를 가져온다(관리자는 전체).
+- 대시보드 조회 시 회의록 재동기화를 하지 않는다. 동기화는 회의록 생성·수정·삭제 시점에만 일어난다.
+- 대시보드 응답의 `todoId` 조회를 프로젝트 단위 일괄 조회로 바꿔 N+1을 없앴다.
+- 전사 처리 전 ffprobe로 길이를 알 수 있으면 월 한도(기본 600분)를 넘는 파일은 STT에 보내지 않고 `FAILED`로 기록한다.
+- Swagger/OpenAPI는 기본 꺼짐. 로컬에서만 `SPRINGDOC_ENABLED=true`.
+- `server.forward-headers-strategy=native`로 프록시(Railway) 뒤에서 클라이언트 IP와 https를 올바르게 읽는다.

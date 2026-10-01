@@ -84,6 +84,20 @@ public class ProjectController {
         return ResponseEntity.noContent().build();
     }
 
+    @PostMapping("/{projectId}/members/{userId}/owner")
+    public ResponseEntity<List<ProjectMemberResponse>> transferOwnership(
+            @PathVariable String projectId,
+            @PathVariable String userId,
+            HttpServletRequest request
+    ) {
+        AuthenticatedUser user = authenticatedUser(request);
+        boolean admin = isAdmin(request);
+        projectMemberService.transferOwnership(projectId, userId, user, admin);
+        return projectMemberService.findProjectMembers(projectId, user, admin)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
+    }
+
     @DeleteMapping("/{projectId}/members/me")
     public ResponseEntity<Void> leaveProject(
             @PathVariable String projectId,

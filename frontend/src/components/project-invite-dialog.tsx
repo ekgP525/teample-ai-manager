@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ApiError } from "@/lib/api/client";
 import {
+  cancelActiveProjectInvitation,
   createProjectInvitation,
   getActiveProjectInvitation,
   type ProjectInvitation,
@@ -24,6 +25,7 @@ export function ProjectInviteDialog({
   const [invitation, setInvitation] = useState<ProjectInvitation | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
+  const [isCanceling, setIsCanceling] = useState(false);
   const [error, setError] = useState("");
   const [copiedValue, setCopiedValue] = useState<CopiedValue>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -70,6 +72,21 @@ export function ProjectInviteDialog({
       setError(getInvitationErrorMessage(requestError, "create"));
     } finally {
       setIsCreating(false);
+    }
+  };
+
+  const cancelInvitation = async () => {
+    if (isCanceling) return;
+    setIsCanceling(true);
+    setError("");
+    try {
+      await cancelActiveProjectInvitation(projectId);
+      setInvitation(null);
+      setCopiedValue(null);
+    } catch (requestError) {
+      setError(getInvitationErrorMessage(requestError, "create"));
+    } finally {
+      setIsCanceling(false);
     }
   };
 
@@ -176,16 +193,26 @@ export function ProjectInviteDialog({
               </p>
 
               <div>
-                <button
-                  type="button"
-                  onClick={() => void createInvitation()}
-                  disabled={isCreating}
-                  className="w-full rounded-lg border border-zinc-300 px-4 py-2.5 text-sm font-medium transition-colors hover:bg-zinc-100 disabled:cursor-wait disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
-                >
-                  {isCreating ? "새 코드 만드는 중..." : "새 초대 코드 만들기"}
-                </button>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <button
+                    type="button"
+                    onClick={() => void createInvitation()}
+                    disabled={isCreating || isCanceling}
+                    className="flex-1 rounded-lg border border-zinc-300 px-4 py-2.5 text-sm font-medium transition-colors hover:bg-zinc-100 disabled:cursor-wait disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
+                  >
+                    {isCreating ? "새 코드 만드는 중..." : "새 초대 코드 만들기"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void cancelInvitation()}
+                    disabled={isCreating || isCanceling}
+                    className="rounded-lg border border-red-300 px-4 py-2.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 disabled:cursor-wait disabled:opacity-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950"
+                  >
+                    {isCanceling ? "무효화 중..." : "코드 무효화"}
+                  </button>
+                </div>
                 <p className="mt-2 text-xs leading-5 text-zinc-500">
-                  새 코드를 만들면 지금 코드는 더 이상 사용할 수 없습니다.
+                  새 코드를 만들거나 무효화하면 지금 코드는 더 이상 사용할 수 없습니다.
                 </p>
               </div>
             </div>
