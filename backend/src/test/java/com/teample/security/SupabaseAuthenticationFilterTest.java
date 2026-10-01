@@ -290,4 +290,20 @@ class SupabaseAuthenticationFilterTest {
         assertThat(request.getAttribute(SupabaseAuthenticationFilter.AUTH_USER_ID_ATTRIBUTE)).isEqualTo("auth-user-1");
         verify(filterChain).doFilter(request, response);
     }
+
+    @Test
+    void healthEndpointSkipsAuthentication() throws Exception {
+        SupabaseAuthService authService = mock(SupabaseAuthService.class);
+        AdminTestAuthService adminTestAuthService = mock(AdminTestAuthService.class);
+        SupabaseAuthenticationFilter filter = new SupabaseAuthenticationFilter(authService, adminTestAuthService);
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/health");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        FilterChain filterChain = mock(FilterChain.class);
+
+        filter.doFilter(request, response, filterChain);
+
+        assertThat(response.getStatus()).isEqualTo(200);
+        verify(filterChain).doFilter(request, response);
+        verifyNoInteractions(authService, adminTestAuthService);
+    }
 }

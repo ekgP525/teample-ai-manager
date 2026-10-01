@@ -1180,3 +1180,4 @@ Content-Type: application/json
 - 전사 처리 전 ffprobe로 길이를 알 수 있으면 월 한도(기본 600분)를 넘는 파일은 STT에 보내지 않고 `FAILED`로 기록한다.
 - Swagger/OpenAPI는 기본 꺼짐. 로컬에서만 `SPRINGDOC_ENABLED=true`.
 - `server.forward-headers-strategy=native`로 프록시(Railway) 뒤에서 클라이언트 IP와 https를 올바르게 읽는다.
+- `GET /api/health`는 인증 없이 `200 {"status":"UP"}`을 돌려주는 배포 헬스체크용 엔드포인트다. DB나 외부 서비스는 확인하지 않는다. `backend/railway.json`의 `healthcheckPath`가 이 경로를 가리킨다(Railway는 2xx만 성공으로 본다).
