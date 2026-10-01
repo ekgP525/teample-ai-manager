@@ -10,11 +10,11 @@ import {
 } from "@/lib/api/kakao";
 import type { KakaoLinkStatus } from "@/types/subscription";
 
-export function KakaoLinkCard() {
+export function KakaoLinkCard({ initialNotice = "" }: { initialNotice?: string }) {
   const [status, setStatus] = useState<KakaoLinkStatus | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
+  const [notice, setNotice] = useState(initialNotice);
   const [isBusy, setIsBusy] = useState(false);
   const [confirmUnlink, setConfirmUnlink] = useState(false);
 

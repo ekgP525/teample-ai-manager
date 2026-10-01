@@ -8,8 +8,10 @@ import {
   hasAdminTestSession,
   setAdminTestSession,
 } from "@/lib/admin-test-auth";
+import { getSafeNextPath } from "@/lib/safe-next";
 import { signInWithOAuth as signInWithSocialOAuth } from "@/lib/sign-in-with-oauth";
 import { supabase } from "@/lib/supabase";
+import { withTimeout } from "@/lib/with-timeout";
 
 const ADMIN_TEST_ID = "admin";
 const apiUrl = process.env.NEXT_PUBLIC_API_URL;
@@ -21,9 +23,7 @@ function LoginForm() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const next = searchParams.get("next")?.startsWith("/")
-    ? searchParams.get("next")!
-    : "/projects";
+  const next = getSafeNextPath(searchParams.get("next"));
   const reason = searchParams.get("reason");
   const redirectMessage =
     reason === "session-expired"
@@ -97,7 +97,12 @@ function LoginForm() {
           return;
         }
 
-        await supabase.auth.signOut({ scope: "local" });
+        // Supabase 서버에 닿지 않으면 signOut이 끝나지 않을 수 있으므로 3초만 기다리고 진행한다.
+        try {
+          await withTimeout(supabase.auth.signOut({ scope: "local" }), 3000);
+        } catch {
+          // 로컬 세션 정리에 실패해도 관리자 테스트 세션은 별도 저장소를 쓰므로 계속 진행한다.
+        }
         setAdminTestSession(ADMIN_TEST_ID, password);
         router.replace(next);
         router.refresh();
@@ -224,6 +229,14 @@ function LoginForm() {
           계정이 없으신가요?{" "}
           <Link href="/signup" className="font-medium text-zinc-900 dark:text-zinc-100">
             회원가입
+          </Link>
+        </p>
+        <p className="mt-6 flex justify-center gap-4 text-xs text-zinc-400">
+          <Link href="/privacy" className="hover:underline">
+            개인정보처리방침
+          </Link>
+          <Link href="/terms" className="hover:underline">
+            이용약관
           </Link>
         </p>
       </div>

@@ -11,6 +11,12 @@ import {
 import type { PaymentRecord, Subscription } from "@/types/subscription";
 import type { UserPlan } from "@/types/transcription";
 
+export type CheckoutIntent = "start" | "change-card" | "resume";
+
+export const BILLING_TEST_MODE_STORAGE_KEY = "teample.billing.testMode";
+export const BILLING_TEST_MODE_MESSAGE =
+  "테스트 결제 환경입니다. 실제 출금은 발생하지 않습니다.";
+
 export function SubscriptionCard({
   plan,
   onPlanChanged,
@@ -23,6 +29,7 @@ export function SubscriptionCard({
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [isStarting, setIsStarting] = useState(false);
+  const [isTestMode, setIsTestMode] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [isCanceling, setIsCanceling] = useState(false);
   const [showPayments, setShowPayments] = useState(false);
@@ -52,17 +59,29 @@ export function SubscriptionCard({
     return () => controller.abort();
   }, []);
 
-  const startCheckout = async () => {
+  const startCheckout = async (intent: CheckoutIntent) => {
     if (isStarting) return;
     setIsStarting(true);
     setError("");
     try {
       const checkout = await startSubscriptionCheckout();
+      setIsTestMode(checkout.testMode);
+      try {
+        // 성공 페이지가 테스트 결제 안내를 이어서 보여줄 수 있게 남긴다.
+        window.sessionStorage.setItem(
+          BILLING_TEST_MODE_STORAGE_KEY,
+          checkout.testMode ? "true" : "false"
+        );
+      } catch {
+        // 스토리지를 쓸 수 없어도 결제는 계속 진행한다.
+      }
+      const successUrl = new URL("/billing/success", window.location.origin);
+      successUrl.searchParams.set("intent", intent);
       const tossPayments = await loadTossPayments(checkout.clientKey);
       const payment = tossPayments.payment({ customerKey: checkout.customerKey });
       await payment.requestBillingAuth({
         method: "CARD",
-        successUrl: `${window.location.origin}/billing/success`,
+        successUrl: successUrl.toString(),
         failUrl: `${window.location.origin}/billing/fail`,
         customerEmail: checkout.customerEmail ?? undefined,
         customerName: checkout.customerName ?? undefined,
@@ -131,7 +150,7 @@ export function SubscriptionCard({
               )}
               <button
                 type="button"
-                onClick={() => void startCheckout()}
+                onClick={() => void startCheckout("start")}
                 disabled={isStarting}
                 aria-busy={isStarting}
                 className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-800 disabled:cursor-wait disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
@@ -165,7 +184,7 @@ export function SubscriptionCard({
                 {(isPastDue || isCanceled) && (
                   <button
                     type="button"
-                    onClick={() => void startCheckout()}
+                    onClick={() => void startCheckout("resume")}
                     disabled={isStarting}
                     className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
                   >
@@ -175,11 +194,11 @@ export function SubscriptionCard({
                 {isActive && (
                   <button
                     type="button"
-                    onClick={() => void startCheckout()}
+                    onClick={() => void startCheckout("change-card")}
                     disabled={isStarting}
                     className="rounded-lg border border-zinc-300 px-4 py-2 text-sm transition-colors hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
                   >
-                    카드 변경
+                    {isStarting ? "결제창 여는 중..." : "카드 변경"}
                   </button>
                 )}
                 {isActive && !confirmCancel && (
@@ -218,6 +237,15 @@ export function SubscriptionCard({
                 </div>
               )}
             </>
+          )}
+
+          {isTestMode && (
+            <p
+              role="status"
+              className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950 dark:text-amber-200"
+            >
+              {BILLING_TEST_MODE_MESSAGE}
+            </p>
           )}
 
           {payments.length > 0 && (

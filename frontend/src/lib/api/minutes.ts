@@ -43,9 +43,18 @@ export function getMinutes(
   });
 }
 
-export function createMinutes(projectId: string, input: CreateMinutesInput) {
+/**
+ * requestKey는 같은 내용을 재시도할 때 회의록이 중복 생성되지 않도록
+ * 백엔드가 Idempotency-Key 헤더로 받는 값이다.
+ */
+export function createMinutes(
+  projectId: string,
+  input: CreateMinutesInput,
+  requestKey: string
+) {
   return apiRequest<Minutes>(minutesPath(projectId), {
     method: "POST",
+    headers: { "Idempotency-Key": requestKey },
     body: JSON.stringify(input),
     errorMessage: "회의록 생성에 실패했습니다.",
   });

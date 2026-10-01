@@ -9,9 +9,14 @@ export function SignOutButton({ className = "" }: { className?: string }) {
 
   async function signOut() {
     clearAdminTestSession();
-    await supabase.auth.signOut();
-    router.replace("/login");
-    router.refresh();
+    try {
+      await supabase.auth.signOut();
+    } catch {
+      // Supabase에 닿지 않아도 로컬 세션은 정리되므로 로그인 화면으로 보낸다.
+    } finally {
+      router.replace("/login");
+      router.refresh();
+    }
   }
 
   return (

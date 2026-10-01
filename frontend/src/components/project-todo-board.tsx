@@ -72,12 +72,15 @@ export function ProjectTodoBoard({
   const [isToastLeaving, setIsToastLeaving] = useState(false);
   const [isUndoing, setIsUndoing] = useState(false);
   const exitTimerRef = useRef<number | null>(null);
+  // 가장 최근 로드 요청 번호. 이전 요청(예: 탭 전환 전 재시도)의 결과는 무시한다.
+  const loadRequestRef = useRef(0);
   const currentKey = `${projectId}/${status}`;
   const displayItems = buildTodoDisplayItems(todos, minutes, viewMode);
   const canReorderTodos = canReorder(todos, viewMode);
 
   useEffect(() => {
     const controller = new AbortController();
+    loadRequestRef.current += 1;
 
     void getProjectTodos(projectId, status, controller.signal)
       .then((data) => {
@@ -121,11 +124,15 @@ export function ProjectTodoBoard({
   }, []);
 
   const reload = async () => {
+    const requestId = ++loadRequestRef.current;
     setLoadedKey("");
     setError("");
     try {
-      setTodos(await getProjectTodos(projectId, status));
+      const data = await getProjectTodos(projectId, status);
+      if (requestId !== loadRequestRef.current) return;
+      setTodos(data);
     } catch (loadError) {
+      if (requestId !== loadRequestRef.current) return;
       setTodos([]);
       setError(
         loadError instanceof Error
@@ -133,7 +140,7 @@ export function ProjectTodoBoard({
           : "프로젝트 업무를 불러오지 못했습니다."
       );
     } finally {
-      setLoadedKey(currentKey);
+      if (requestId === loadRequestRef.current) setLoadedKey(currentKey);
     }
   };
 
@@ -729,7 +736,7 @@ export function ProjectTodoBoard({
       {toast && (
         <div
           role="status"
-          className={`fixed bottom-5 left-1/2 z-50 flex w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 items-center gap-3 rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-3 text-sm text-white shadow-2xl transition-[opacity,transform] duration-300 motion-reduce:transition-none dark:border-zinc-600 dark:bg-zinc-100 dark:text-zinc-900 ${
+          className={`fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom))] left-1/2 z-50 flex md:bottom-5 w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 items-center gap-3 rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-3 text-sm text-white shadow-2xl transition-[opacity,transform] duration-300 motion-reduce:transition-none dark:border-zinc-600 dark:bg-zinc-100 dark:text-zinc-900 ${
             isToastLeaving
               ? "translate-y-2 opacity-0"
               : "translate-y-0 opacity-100"

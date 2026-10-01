@@ -71,10 +71,22 @@ async function sendRequest<T>(
     requestHeaders.set("Content-Type", "application/json");
   }
 
-  const response = await fetch(`${apiUrl}${path}`, {
-    ...options,
-    headers: requestHeaders,
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${apiUrl}${path}`, {
+      ...options,
+      headers: requestHeaders,
+    });
+  } catch (fetchError) {
+    // 호출 측이 취소한 요청은 그대로 전달해 오류 UI로 처리되지 않게 한다.
+    if (fetchError instanceof Error && fetchError.name === "AbortError") {
+      throw fetchError;
+    }
+    throw new ApiError(
+      "서버에 연결하지 못했습니다. 백엔드가 실행 중인지 확인해 주세요.",
+      0
+    );
+  }
 
   if (
     response.status === 401 &&
@@ -116,7 +128,10 @@ async function sendRequest<T>(
 
     if (response.status === 403) {
       throw new ApiError(
-        "이 프로젝트에 접근하거나 작업을 수행할 권한이 없습니다.",
+        await getErrorMessage(
+          response,
+          "이 프로젝트에 접근하거나 작업을 수행할 권한이 없습니다."
+        ),
         403
       );
     }

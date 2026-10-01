@@ -27,9 +27,15 @@ export default function MinutesPage() {
   const [audioUrl, setAudioUrl] = useState("");
   const audioRef = useRef<HTMLAudioElement>(null);
   const currentKey = `${id}/${minutesId}`;
+  // 가장 최근 로드 요청 번호. 이전 요청(예: 다른 회의록의 재시도)의 결과는 무시한다.
+  const loadRequestRef = useRef(0);
 
   const loadMinutes = useCallback(
     async (signal?: AbortSignal) => {
+      const requestId = ++loadRequestRef.current;
+      const isStale = () =>
+        signal?.aborted || requestId !== loadRequestRef.current;
+
       try {
         const [minutesData, projectData] = await Promise.all([
           getMinutes(id, minutesId, {
@@ -38,12 +44,13 @@ export default function MinutesPage() {
           }),
           getProject(id, signal),
         ]);
+        if (isStale()) return;
         setMinutes(minutesData);
         setIsReadOnly(projectData.status === "DELETED");
         setLoadError("");
         setMinutesNotFound(false);
       } catch (error) {
-        if (signal?.aborted) return;
+        if (isStale()) return;
 
         setMinutes(null);
         if (error instanceof ApiError && error.status === 404) {
@@ -56,7 +63,7 @@ export default function MinutesPage() {
           );
         }
       } finally {
-        if (!signal?.aborted) {
+        if (!isStale()) {
           setLoadedKey(currentKey);
           setIsLoading(false);
         }
@@ -74,6 +81,7 @@ export default function MinutesPage() {
 
   useEffect(() => {
     const controller = new AbortController();
+    loadRequestRef.current += 1;
 
     void Promise.all([
       getMinutes(id, minutesId, {

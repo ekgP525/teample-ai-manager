@@ -181,7 +181,8 @@ export function ExportMenu({ minutes }: { minutes: Minutes }) {
     document.body.appendChild(link);
     link.click();
     link.remove();
-    URL.revokeObjectURL(url);
+    // 일부 브라우저는 click 직후 바로 revoke하면 다운로드가 시작되지 않는다.
+    setTimeout(() => URL.revokeObjectURL(url), 0);
     setIsOpen(false);
   };
 

@@ -1,4 +1,6 @@
 export interface Todo {
+  /** 백엔드가 부여하는 안정적인 식별자. 편집 화면에서 새로 추가한 행에는 없다. */
+  id?: string | null;
   name: string;
   task: string;
   deadline: string;
