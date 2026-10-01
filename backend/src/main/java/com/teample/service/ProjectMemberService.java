@@ -14,8 +14,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Optional;
-import java.util.stream.Stream;
 
+/**
+ * 프로젝트 접근 권한은 오직 {@code project_members.user_id}(Supabase sub)로만 판정한다.
+ * 이전의 "이름 문자열 매칭" 규칙은 JWT의 사용자 수정 가능 필드에 기대고 있어 제거했다.
+ */
 @Service
 @RequiredArgsConstructor
 public class ProjectMemberService {
@@ -138,9 +141,6 @@ public class ProjectMemberService {
                 project.getId(), user.authUserId(), ProjectMemberRole.OWNER)) {
             return;
         }
-        if (!projectMemberRepository.existsByProjectId(project.getId()) && isLegacyProjectMember(project, user)) {
-            return;
-        }
         throw new ProjectMemberAccessDeniedException("Only project owners can manage this project.");
     }
 
@@ -158,26 +158,7 @@ public class ProjectMemberService {
         if (user == null || project == null || project.getId() == null) {
             return false;
         }
-        if (projectMemberRepository.existsByProjectIdAndUserId(project.getId(), user.authUserId())) {
-            return true;
-        }
-        return !projectMemberRepository.existsByProjectId(project.getId()) && isLegacyProjectMember(project, user);
-    }
-
-    private boolean isLegacyProjectMember(Project project, AuthenticatedUser user) {
-        if (project.getMembers() == null || project.getMembers().isEmpty()) {
-            return false;
-        }
-        List<String> candidates = Stream.of(user.authUserId(), user.memberKey(), user.email())
-                .map(this::normalize)
-                .filter(value -> value != null)
-                .toList();
-        if (candidates.isEmpty()) {
-            return false;
-        }
-        return project.getMembers().stream()
-                .map(this::normalize)
-                .anyMatch(member -> member != null && candidates.stream().anyMatch(member::equalsIgnoreCase));
+        return projectMemberRepository.existsByProjectIdAndUserId(project.getId(), user.authUserId());
     }
 
     private Project requireAccountManagedProject(String projectId) {
@@ -185,15 +166,20 @@ public class ProjectMemberService {
                 .orElseThrow(() -> new ProjectNotFoundException("Project not found."));
         if (!projectMemberRepository.existsByProjectId(projectId)) {
             throw new ProjectMemberConflictException(
-                    "Member management is unavailable for legacy projects without account memberships."
+                    "Member management is unavailable for projects without account memberships."
             );
         }
         return project;
     }
 
+    /** 진행률 행은 계정 ID(sub)로 묶인다. 표시 이름으로 저장된 옛 행도 함께 비활성화한다. */
     private void deactivateTodoProgress(String projectId, ProjectMember member) {
-        todoMemberProgressRepository.findByProjectIdAndUserId(projectId, member.getDisplayName())
+        todoMemberProgressRepository.findByProjectIdAndUserId(projectId, member.getUserId())
                 .forEach(progress -> progress.setAssigned(false));
+        if (member.getDisplayName() != null && !member.getDisplayName().equals(member.getUserId())) {
+            todoMemberProgressRepository.findByProjectIdAndUserId(projectId, member.getDisplayName())
+                    .forEach(progress -> progress.setAssigned(false));
+        }
     }
 
     private String resolveDisplayName(AuthenticatedUser user) {
@@ -204,10 +190,6 @@ public class ProjectMemberService {
             return user.email().trim();
         }
         return user.authUserId();
-    }
-
-    private String normalize(String value) {
-        return value == null || value.isBlank() ? null : value.trim();
     }
 
     public static class ProjectMemberAccessDeniedException extends RuntimeException {

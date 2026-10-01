@@ -32,9 +32,17 @@ server:
 anthropic:
   api-key: ${ANTHROPIC_API_KEY:}
 
+# 개발용 관리자 테스트 인증. 기본 비활성. 켜려면 ADMIN_TEST_ENABLED=true와 12자 이상 비밀번호가 필요하다.
+admin:
+  test-enabled: ${ADMIN_TEST_ENABLED:false}
+  test-id: ${ADMIN_TEST_ID:}
+  test-password: ${ADMIN_TEST_PASSWORD:}
+
 # 프리미엄 요금제: 토스페이먼츠 빌링 구독 또는 관리자 수동 부여
 app:
   frontend-base-url: ${FRONTEND_BASE_URL:http://localhost:3000}
+  # 쉼표로 구분한 정확한 Origin 목록. 와일드카드는 쓰지 않는다.
+  cors-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
   plan:
     premium-monthly-minutes: ${PREMIUM_MONTHLY_MINUTES:600}
     premium-price-krw: ${PREMIUM_PRICE_KRW:4900}

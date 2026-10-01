@@ -53,6 +53,9 @@ public class ProjectInvitationController {
     @ExceptionHandler(ProjectInvitationService.AlreadyProjectMemberException.class)
     public ResponseEntity<Void> handleAlreadyMember() { return ResponseEntity.status(HttpStatus.CONFLICT).build(); }
 
+    @ExceptionHandler(ProjectInvitationService.ProjectClosedException.class)
+    public ResponseEntity<Void> handleProjectClosed() { return ResponseEntity.status(HttpStatus.CONFLICT).build(); }
+
     @ExceptionHandler(ProjectMemberService.ProjectMemberAccessDeniedException.class)
     public ResponseEntity<Void> handleAccessDenied() { return ResponseEntity.status(HttpStatus.FORBIDDEN).build(); }
 

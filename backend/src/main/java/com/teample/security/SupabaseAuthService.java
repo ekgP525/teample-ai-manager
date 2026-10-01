@@ -35,6 +35,9 @@ public class SupabaseAuthService {
     private static final String SUPABASE_P256_CURVE = "P-256";
     private static final String JAVA_P256_CURVE = "secp256r1";
     private static final Duration JWKS_CACHE_TTL = Duration.ofMinutes(10);
+    /** 모르는 kid 때문에 JWKS를 다시 받는 건 30초에 한 번만 허용한다(부정 캐시). */
+    private static final Duration UNKNOWN_KID_REFETCH_INTERVAL = Duration.ofSeconds(30);
+    private static final String EXPECTED_AUDIENCE = "authenticated";
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final HttpClient httpClient = HttpClient.newHttpClient();
@@ -47,6 +50,7 @@ public class SupabaseAuthService {
     private String supabaseJwtIssuer;
 
     private volatile CachedJwks cachedJwks;
+    private volatile Instant lastJwksFetchAt = Instant.EPOCH;
 
     public AuthenticatedUser authenticate(HttpServletRequest request) {
         String token = resolveBearerToken(request);
@@ -97,6 +101,7 @@ public class SupabaseAuthService {
             JsonNode claims = objectMapper.readTree(base64UrlDecode(parts[1]));
             validateExpiration(claims);
             validateIssuer(claims);
+            validateAudience(claims);
             return claims;
         } catch (IOException e) {
             throw new AuthRequiredException("Invalid Supabase access token.");
@@ -127,10 +132,20 @@ public class SupabaseAuthService {
         if (current != null && now.isBefore(current.expiresAt()) && containsKid(current.jwks(), kid)) {
             return current.jwks();
         }
-
-        JsonNode fresh = fetchJwks();
-        cachedJwks = new CachedJwks(fresh, now.plus(JWKS_CACHE_TTL));
-        return fresh;
+        synchronized (this) {
+            CachedJwks latest = cachedJwks;
+            if (latest != null && now.isBefore(latest.expiresAt()) && containsKid(latest.jwks(), kid)) {
+                return latest.jwks();
+            }
+            if (latest != null && now.isBefore(lastJwksFetchAt.plus(UNKNOWN_KID_REFETCH_INTERVAL))) {
+                // 최근 30초 안에 받은 JWKS에도 없는 kid다. 네트워크를 다시 타지 않고 거절한다.
+                throw new AuthRequiredException("Supabase signing key was not found.");
+            }
+            JsonNode fresh = fetchJwks();
+            lastJwksFetchAt = now;
+            cachedJwks = new CachedJwks(fresh, now.plus(JWKS_CACHE_TTL));
+            return fresh;
+        }
     }
 
     protected JsonNode fetchJwks() {
@@ -233,6 +248,25 @@ public class SupabaseAuthService {
         String issuer = optionalText(claims, "iss");
         if (!normalizeIssuer(supabaseJwtIssuer).equals(normalizeIssuer(issuer))) {
             throw new AuthRequiredException("Invalid Supabase access token issuer.");
+        }
+    }
+
+    /** aud가 있으면 "authenticated"여야 한다(문자열 또는 배열). 없으면 검사하지 않는다. */
+    private void validateAudience(JsonNode claims) {
+        JsonNode aud = claims.path("aud");
+        if (aud.isMissingNode() || aud.isNull()) {
+            return;
+        }
+        if (aud.isArray()) {
+            for (JsonNode value : aud) {
+                if (EXPECTED_AUDIENCE.equals(value.asText())) {
+                    return;
+                }
+            }
+            throw new AuthRequiredException("Invalid Supabase access token audience.");
+        }
+        if (!EXPECTED_AUDIENCE.equals(aud.asText())) {
+            throw new AuthRequiredException("Invalid Supabase access token audience.");
         }
     }
 

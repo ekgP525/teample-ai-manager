@@ -99,14 +99,16 @@ class ProjectMemberServiceTest {
     }
 
     @Test
-    void ensureProjectMemberAllowsLegacyMemberWhenProjectHasNoAccountMembers() {
+    void ensureProjectMemberNoLongerAcceptsNameMatchingForProjectsWithoutAccountMembers() {
         AuthenticatedUser user = new AuthenticatedUser("supabase-user-id", "alice", "alice@example.com");
         Project project = Project.builder().id("project-id").members(List.of("alice", "bob")).build();
         when(projectRepository.findById("project-id")).thenReturn(Optional.of(project));
         when(projectMemberRepository.existsByProjectIdAndUserId("project-id", "supabase-user-id")).thenReturn(false);
-        when(projectMemberRepository.existsByProjectId("project-id")).thenReturn(false);
 
-        service.ensureProjectMember("project-id", user, false);
+        assertThatThrownBy(() -> service.ensureProjectMember("project-id", user, false))
+                .isInstanceOf(ProjectMemberService.ProjectMemberAccessDeniedException.class);
+        assertThatThrownBy(() -> service.ensureProjectOwner("project-id", user, false))
+                .isInstanceOf(ProjectMemberService.ProjectMemberAccessDeniedException.class);
     }
 
     @Test
@@ -116,7 +118,6 @@ class ProjectMemberServiceTest {
         when(projectRepository.findById("project-id")).thenReturn(Optional.of(project));
         when(projectMemberRepository.existsByProjectIdAndUserIdAndRole(
                 "project-id", "member-user-id", ProjectMemberRole.OWNER)).thenReturn(false);
-        when(projectMemberRepository.existsByProjectId("project-id")).thenReturn(true);
 
         assertThatThrownBy(() -> service.ensureProjectOwner("project-id", user, false))
                 .isInstanceOf(ProjectMemberService.ProjectMemberAccessDeniedException.class);
@@ -128,7 +129,6 @@ class ProjectMemberServiceTest {
         Project project = Project.builder().id("project-id").members(List.of("alice")).build();
         when(projectRepository.findById("project-id")).thenReturn(Optional.of(project));
         when(projectMemberRepository.existsByProjectIdAndUserId("project-id", "other-user-id")).thenReturn(false);
-        when(projectMemberRepository.existsByProjectId("project-id")).thenReturn(true);
 
         assertThatThrownBy(() -> service.findProjectMembers("project-id", user, false))
                 .isInstanceOf(ProjectMemberService.ProjectMemberAccessDeniedException.class);
@@ -177,6 +177,8 @@ class ProjectMemberServiceTest {
                 "project-id", "owner-id", ProjectMemberRole.OWNER)).thenReturn(true);
         when(projectMemberRepository.findByProjectIdAndUserId("project-id", "member-id"))
                 .thenReturn(Optional.of(target));
+        when(todoMemberProgressRepository.findByProjectIdAndUserId("project-id", "member-id"))
+                .thenReturn(List.of());
         when(todoMemberProgressRepository.findByProjectIdAndUserId("project-id", "member"))
                 .thenReturn(List.of(progress));
 
@@ -250,6 +252,8 @@ class ProjectMemberServiceTest {
         when(projectMemberRepository.existsByProjectId("project-id")).thenReturn(true);
         when(projectMemberRepository.findByProjectIdAndUserId("project-id", "member-id"))
                 .thenReturn(Optional.of(membership));
+        when(todoMemberProgressRepository.findByProjectIdAndUserId("project-id", "member-id"))
+                .thenReturn(List.of());
         when(todoMemberProgressRepository.findByProjectIdAndUserId("project-id", "member"))
                 .thenReturn(List.of(progress));
 
@@ -294,7 +298,6 @@ class ProjectMemberServiceTest {
         when(projectRepository.findById("project-id")).thenReturn(Optional.of(project));
         when(projectMemberRepository.existsByProjectIdAndUserId("project-id", "removed-id"))
                 .thenReturn(false);
-        when(projectMemberRepository.existsByProjectId("project-id")).thenReturn(true);
 
         assertThatThrownBy(() -> service.ensureProjectMember("project-id", removed, false))
                 .isInstanceOf(ProjectMemberService.ProjectMemberAccessDeniedException.class);
@@ -309,7 +312,7 @@ class ProjectMemberServiceTest {
 
         assertThatThrownBy(() -> service.removeMember("legacy-id", "member-id", owner, false))
                 .isInstanceOf(ProjectMemberService.ProjectMemberConflictException.class)
-                .hasMessageContaining("legacy projects");
+                .hasMessageContaining("without account memberships");
     }
 
     private void stubOwnerRemoval(Project project, AuthenticatedUser owner, ProjectMember target) {

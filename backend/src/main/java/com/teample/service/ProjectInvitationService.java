@@ -11,6 +11,7 @@ import com.teample.repository.ProjectMemberRepository;
 import com.teample.repository.ProjectRepository;
 import com.teample.security.AuthenticatedUser;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -62,15 +63,23 @@ public class ProjectInvitationService {
         }
         Project project = projectRepository.findById(invitation.getProjectId())
                 .orElseThrow(() -> new InvitationNotFoundException("Project not found."));
+        if (project.isDeleted() || project.getResolvedStatus().isEnded()) {
+            throw new ProjectClosedException("Project is ended or deleted.");
+        }
         if (memberRepository.existsByProjectIdAndUserId(project.getId(), user.authUserId())) {
             throw new AlreadyProjectMemberException("User is already a project member.");
         }
-        memberRepository.save(ProjectMember.builder()
-                .project(project)
-                .userId(user.authUserId())
-                .displayName(resolveDisplayName(user))
-                .role(ProjectMemberRole.MEMBER)
-                .build());
+        try {
+            // 같은 사용자가 동시에 두 번 참여하면 uk_project_members_project_user에 걸린다. 바로 flush해서 여기서 잡는다.
+            memberRepository.saveAndFlush(ProjectMember.builder()
+                    .project(project)
+                    .userId(user.authUserId())
+                    .displayName(resolveDisplayName(user))
+                    .role(ProjectMemberRole.MEMBER)
+                    .build());
+        } catch (DataIntegrityViolationException e) {
+            throw new AlreadyProjectMemberException("User is already a project member.");
+        }
         return new JoinProjectInvitationResponse(project.getId(), project.getName(), ProjectMemberRole.MEMBER);
     }
 
@@ -102,5 +111,9 @@ public class ProjectInvitationService {
 
     public static class AlreadyProjectMemberException extends RuntimeException {
         public AlreadyProjectMemberException(String message) { super(message); }
+    }
+
+    public static class ProjectClosedException extends RuntimeException {
+        public ProjectClosedException(String message) { super(message); }
     }
 }

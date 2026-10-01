@@ -1,5 +1,6 @@
 package com.teample.security;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -16,6 +17,7 @@ import java.util.Base64;
 /**
  * DB에 저장하는 외부 서비스 토큰(카카오 등)을 AES-GCM으로 감싼다.
  * APP_TOKEN_ENCRYPTION_KEY가 없으면 암호화 없이 저장하되 "plain:" 접두어로 구분한다.
+ * 단, 카카오 연동(KAKAO_REST_API_KEY)이 켜져 있는데 암호화 키가 없으면 기동을 거부한다.
  */
 @Component
 public class SecretCipher {
@@ -28,8 +30,21 @@ public class SecretCipher {
     private final SecretKey key;
     private final SecureRandom random = new SecureRandom();
 
-    public SecretCipher(@Value("${app.security.token-encryption-key:}") String rawKey) {
+    public SecretCipher(String rawKey) {
+        this(rawKey, "");
+    }
+
+    @Autowired
+    public SecretCipher(
+            @Value("${app.security.token-encryption-key:}") String rawKey,
+            @Value("${kakao.rest-api-key:}") String kakaoRestApiKey
+    ) {
         if (rawKey == null || rawKey.isBlank()) {
+            if (kakaoRestApiKey != null && !kakaoRestApiKey.isBlank()) {
+                throw new IllegalStateException(
+                        "KAKAO_REST_API_KEY가 설정되어 있지만 APP_TOKEN_ENCRYPTION_KEY가 비어 있습니다. "
+                                + "카카오 토큰을 평문으로 저장할 수 없으니 backend/.env에 APP_TOKEN_ENCRYPTION_KEY(긴 임의 문자열)를 넣고 다시 시작해 주세요.");
+            }
             this.key = null;
         } else {
             try {
