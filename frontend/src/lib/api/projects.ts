@@ -54,6 +54,16 @@ export function removeProjectMember(projectId: string, userId: string) {
   );
 }
 
+export function transferProjectOwnership(projectId: string, userId: string) {
+  return apiRequest<ProjectMember[]>(
+    `/api/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(userId)}/owner`,
+    {
+      method: "POST",
+      errorMessage: "소유자를 변경하지 못했습니다.",
+    }
+  );
+}
+
 export function leaveProject(projectId: string) {
   return apiRequest<void>(
     `/api/projects/${encodeURIComponent(projectId)}/members/me`,

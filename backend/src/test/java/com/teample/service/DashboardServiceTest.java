@@ -271,10 +271,9 @@ class DashboardServiceTest {
         verify(todoMemberProgressRepository, never()).findByProjectIdAndUserIdAndAssignedTrue("project-1", "alice");
     }
     @Test
-    void jwtDashboardSkipsSyncWhenProgressRowsAlreadyExist() {
+    void jwtDashboardNeverSynchronizesOnRead() {
         AuthenticatedUser user = new AuthenticatedUser("supabase-user-id", "alice", "alice@example.com");
         when(projectRepository.findById("project-1")).thenReturn(Optional.of(project));
-        when(todoMemberProgressRepository.existsByProjectId("project-1")).thenReturn(true);
         when(todoMemberProgressRepository.findByProjectIdAndUserIdAndAssignedTrue("project-1", "supabase-user-id"))
                 .thenReturn(List.of(progress("assignment-acct", "supabase-user-id", false, sharedTodo)));
 

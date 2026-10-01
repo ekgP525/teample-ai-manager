@@ -27,6 +27,15 @@ spring:
 
 server:
   port: ${PORT:8080}
+  # Railway/Vercel 같은 프록시 뒤에서 클라이언트 IP(레이트리밋)와 https 스킴을 올바르게 읽는다.
+  forward-headers-strategy: native
+
+# Swagger UI/OpenAPI는 기본 꺼짐. 로컬에서 보려면 SPRINGDOC_ENABLED=true
+springdoc:
+  api-docs:
+    enabled: ${SPRINGDOC_ENABLED:false}
+  swagger-ui:
+    enabled: ${SPRINGDOC_ENABLED:false}
 
 # Anthropic Claude API
 anthropic:

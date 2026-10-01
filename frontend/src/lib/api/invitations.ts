@@ -36,6 +36,16 @@ export async function createProjectInvitation(projectId: string) {
   );
 }
 
+export async function cancelActiveProjectInvitation(projectId: string) {
+  return apiRequest<void>(
+    `/api/projects/${encodeURIComponent(projectId)}/invitations/active`,
+    {
+      method: "DELETE",
+      errorMessage: "초대 코드를 무효화하지 못했습니다.",
+    }
+  );
+}
+
 export async function joinProjectInvitation(code: string) {
   return apiRequest<JoinProjectInvitationResponse>(
     "/api/project-invitations/join",

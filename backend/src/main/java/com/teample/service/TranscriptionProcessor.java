@@ -52,6 +52,7 @@ public class TranscriptionProcessor {
     private final Duration maxWait;
     /** 지금 이 인스턴스에서 처리 중인 전사 ID. 재디스패치가 같은 작업을 두 번 돌리지 않게 막는다. */
     private final Set<String> running = ConcurrentHashMap.newKeySet();
+    private final long premiumMonthlyMinutes;
 
     public TranscriptionProcessor(
             TranscriptionRepository transcriptionRepository,
@@ -60,8 +61,10 @@ public class TranscriptionProcessor {
             SpeechToTextProvider provider,
             @Qualifier(AsyncConfig.TRANSCRIPTION_EXECUTOR) Executor executor,
             @Value("${stt.poll-interval-seconds:5}") long pollIntervalSeconds,
-            @Value("${stt.max-wait-minutes:120}") long maxWaitMinutes
+            @Value("${stt.max-wait-minutes:120}") long maxWaitMinutes,
+            @Value("${app.plan.premium-monthly-minutes:600}") long premiumMonthlyMinutes
     ) {
+        this.premiumMonthlyMinutes = premiumMonthlyMinutes;
         this.transcriptionRepository = transcriptionRepository;
         this.mediaStorageService = mediaStorageService;
         this.mediaConverter = mediaConverter;
@@ -179,6 +182,7 @@ public class TranscriptionProcessor {
                     transcription.setDurationMs(probed);
                 }
             }
+            ensureWithinMonthlyQuota(transcription);
             String jobId = provider.submit(upload, upload.getFileName().toString(),
                     new SpeechToTextProvider.TranscriptionOptions(transcription.getLanguage(), transcription.getExpectedSpeakers()));
             transcription.setProviderJobId(jobId);
@@ -192,6 +196,27 @@ public class TranscriptionProcessor {
                     // 변환 임시 파일 삭제 실패는 무시한다.
                 }
             }
+        }
+    }
+
+    /**
+     * 길이를 미리 알 수 있는 경우(ffprobe) STT를 보내기 전에 월 한도를 넘는지 확인한다.
+     * 업로드 시점 검사는 길이를 몰라 통과시키므로, 여기서 한 번 더 막아 1분 남은 사용자가 수 시간짜리를 쓰는 걸 방지한다.
+     */
+    private void ensureWithinMonthlyQuota(Transcription transcription) throws IOException {
+        Long durationMs = transcription.getDurationMs();
+        String userId = transcription.getCreatedBy();
+        if (durationMs == null || durationMs <= 0 || userId == null || userId.startsWith("admin-test:")) {
+            return;
+        }
+        LocalDateTime monthStart = AppClock.today().withDayOfMonth(1).atStartOfDay();
+        long usedMs = transcriptionRepository.sumDurationMsByCreatedBySince(userId, monthStart);
+        // 자기 자신의 길이는 이미 저장돼 합계에 포함돼 있을 수 있으므로 빼고 계산한다.
+        long othersMs = Math.max(0, usedMs - durationMs);
+        long limitMs = premiumMonthlyMinutes * 60_000L;
+        if (othersMs + durationMs > limitMs) {
+            long remainingMinutes = Math.max(0, (limitMs - othersMs) / 60_000L);
+            throw new IOException("이번 달 남은 전사 시간(" + remainingMinutes + "분)보다 긴 파일입니다. 더 짧은 파일을 올리거나 다음 달에 다시 시도해 주세요.");
         }
     }
 

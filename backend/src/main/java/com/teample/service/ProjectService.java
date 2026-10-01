@@ -66,10 +66,21 @@ public class ProjectService {
 
     @Transactional
     public List<ProjectResponse> findAll(AuthenticatedUser user, boolean admin) {
-        return projectRepository.findAll().stream()
+        List<Project> candidates;
+        if (admin) {
+            candidates = projectRepository.findAll();
+        } else if (user == null) {
+            return List.of();
+        } else {
+            // 전체 테이블을 훑지 않고 내 멤버십 행에서 프로젝트를 가져온다.
+            candidates = projectMemberRepository.findByUserIdOrderByJoinedAtAsc(user.authUserId()).stream()
+                    .map(ProjectMember::getProject)
+                    .filter(project -> project != null && project.getId() != null)
+                    .toList();
+        }
+        return candidates.stream()
                 .peek(this::synchronizeStatus)
                 .filter(Project::isVisibleInActiveList)
-                .filter(project -> projectMemberService.canAccessProject(project, user, admin))
                 .map(this::toResponse)
                 .toList();
     }

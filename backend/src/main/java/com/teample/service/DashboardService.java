@@ -33,6 +33,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -66,7 +67,6 @@ public class DashboardService {
 
         return findAccessibleVisibleProjects(user, admin).stream()
                 .map(project -> {
-                    syncProjectIfDashboardRowsMissing(project);
                     return buildMyProjectDashboard(project, resolvedUserId);
                 })
                 .filter(dashboard -> dashboard.getTotalTodoCount() > 0)
@@ -82,7 +82,6 @@ public class DashboardService {
 
         return projectRepository.findById(projectId).map(project -> {
             projectMemberService.ensureProjectMember(project, user, admin);
-            syncProjectIfDashboardRowsMissing(project);
             return buildMyProjectDashboard(project, resolvedUserId);
         });
     }
@@ -96,7 +95,6 @@ public class DashboardService {
 
         return projectRepository.findById(projectId).map(project -> {
             projectMemberService.ensureProjectMember(project, user, admin);
-            syncProjectIfDashboardRowsMissing(project);
             return buildTeamProjectDashboard(project);
         });
     }
@@ -117,7 +115,6 @@ public class DashboardService {
 
         return projectRepository.findById(projectId).map(project -> {
             projectMemberService.ensureProjectMember(project, user, admin);
-            syncProjectIfDashboardRowsMissing(project);
             TeamProjectDashboardResponse teamDashboard = buildTeamProjectDashboard(project);
             List<DashboardMemberResponse> members = teamDashboard.getMembers().stream()
                     .map(this::toLegacyMemberResponse)
@@ -187,7 +184,6 @@ public class DashboardService {
                 .filter(Project::isVisibleInActiveList)
                 .filter(project -> isProjectMember(project, resolvedUserId))
                 .map(project -> {
-                    syncProjectIfDashboardRowsMissing(project);
                     return buildMyProjectDashboard(project, resolvedUserId);
                 })
                 .filter(dashboard -> dashboard.getTotalTodoCount() > 0)
@@ -203,7 +199,6 @@ public class DashboardService {
 
         return projectRepository.findById(projectId).map(project -> {
             ensureProjectMember(project, resolvedUserId);
-            syncProjectIfDashboardRowsMissing(project);
             return buildMyProjectDashboard(project, resolvedUserId);
         });
     }
@@ -217,7 +212,6 @@ public class DashboardService {
 
         return projectRepository.findById(projectId).map(project -> {
             ensureProjectMember(project, resolvedUserId);
-            syncProjectIfDashboardRowsMissing(project);
             return buildTeamProjectDashboard(project);
         });
     }
@@ -265,7 +259,6 @@ public class DashboardService {
 
         return projectRepository.findById(projectId).map(project -> {
             ensureProjectMember(project, resolvedUserId);
-            syncProjectIfDashboardRowsMissing(project);
             TeamProjectDashboardResponse teamDashboard = buildTeamProjectDashboard(project);
             List<DashboardMemberResponse> members = teamDashboard.getMembers().stream()
                     .map(this::toLegacyMemberResponse)
@@ -304,20 +297,61 @@ public class DashboardService {
         return new ArrayList<>(projectsById.values());
     }
 
-    private void syncProjectIfDashboardRowsMissing(Project project) {
-        if (project.getId() != null && !todoMemberProgressRepository.existsByProjectId(project.getId())) {
-            todoProgressSyncService.syncProject(project);
+    /**
+     * 대시보드 응답에 쓰는 클라이언트 업무 ID(integrated_todos.id)를 프로젝트 단위로 한 번에 읽는다.
+     * 진행률 행마다 조회하면 N+1이 된다. 키는 "minutesId|id:<sourceTodoId>"와 "minutesId|idx:<sourceIndex>".
+     */
+    private Map<String, String> buildClientTodoIndex(String projectId) {
+        Map<String, String> index = new HashMap<>();
+        if (projectId == null) {
+            return index;
         }
+        for (IntegratedTodo todo : integratedTodoRepository.findByProjectId(projectId)) {
+            if (todo.getMinutes() == null || todo.getMinutes().getId() == null) {
+                continue;
+            }
+            String minutesId = todo.getMinutes().getId();
+            if (todo.getSourceTodoId() != null) {
+                index.putIfAbsent(minutesId + "|id:" + todo.getSourceTodoId(), todo.getId());
+            }
+            if (todo.getSourceIndex() != null) {
+                index.putIfAbsent(minutesId + "|idx:" + todo.getSourceIndex(), todo.getId());
+            }
+        }
+        return index;
+    }
+
+    private String resolveClientTodoId(ProjectTodo todo, Map<String, String> index) {
+        if (todo == null) {
+            return null;
+        }
+        if (todo.getMinutes() != null && todo.getMinutes().getId() != null) {
+            String minutesId = todo.getMinutes().getId();
+            if (todo.getSourceTodoId() != null) {
+                String byId = index.get(minutesId + "|id:" + todo.getSourceTodoId());
+                if (byId != null) {
+                    return byId;
+                }
+            }
+            if (todo.getSourceIndex() != null) {
+                String byIndex = index.get(minutesId + "|idx:" + todo.getSourceIndex());
+                if (byIndex != null) {
+                    return byIndex;
+                }
+            }
+        }
+        return todo.getId();
     }
 
     private MyProjectDashboardResponse buildMyProjectDashboard(Project project, String userId) {
+        Map<String, String> todoIndex = buildClientTodoIndex(project.getId());
         List<TodoMemberProgress> progressRows = todoMemberProgressRepository
                 .findByProjectIdAndUserIdAndAssignedTrue(project.getId(), userId)
                 .stream()
                 .sorted(progressComparator())
                 .toList();
         List<TodoAssignmentResponse> todos = progressRows.stream()
-                .map(this::toAssignmentResponse)
+                .map(progress -> toAssignmentResponse(progress, todoIndex))
                 .toList();
         int completedCount = countCompleted(todos);
 
@@ -336,6 +370,7 @@ public class DashboardService {
     }
 
     private TeamProjectDashboardResponse buildTeamProjectDashboard(Project project) {
+        Map<String, String> todoIndex = buildClientTodoIndex(project.getId());
         List<TodoMemberProgress> progressRows = todoMemberProgressRepository.findByProjectIdAndAssignedTrue(project.getId())
                 .stream()
                 .sorted(progressComparator())
@@ -347,7 +382,7 @@ public class DashboardService {
         }
 
         List<TeamMemberProgressResponse> members = progressByUser.entrySet().stream()
-                .map(entry -> buildTeamMemberResponse(entry.getKey(), entry.getValue()))
+                .map(entry -> buildTeamMemberResponse(entry.getKey(), entry.getValue(), todoIndex))
                 .toList();
 
         Map<String, List<TodoMemberProgress>> progressByTodo = new LinkedHashMap<>();
@@ -357,7 +392,7 @@ public class DashboardService {
 
         List<TeamTodoProgressResponse> todos = projectTodoRepository.findByProjectId(project.getId()).stream()
                 .sorted(projectTodoComparator())
-                .map(todo -> buildTeamTodoResponse(todo, progressByTodo.getOrDefault(todo.getId(), List.of())))
+                .map(todo -> buildTeamTodoResponse(todo, progressByTodo.getOrDefault(todo.getId(), List.of()), todoIndex))
                 .toList();
         int totalTodoCount = progressRows.size();
         int completedTodoCount = countCompletedProgressRows(progressRows);
@@ -487,10 +522,11 @@ public class DashboardService {
         throw new IllegalArgumentException("status must be TODO or DONE");
     }
 
-    private TeamMemberProgressResponse buildTeamMemberResponse(String userId, List<TodoMemberProgress> progressRows) {
+    private TeamMemberProgressResponse buildTeamMemberResponse(String userId, List<TodoMemberProgress> progressRows,
+                                                               Map<String, String> todoIndex) {
         List<TodoAssignmentResponse> todos = progressRows.stream()
                 .sorted(progressComparator())
-                .map(this::toAssignmentResponse)
+                .map(progress -> toAssignmentResponse(progress, todoIndex))
                 .toList();
         int completedCount = countCompleted(todos);
 
@@ -505,14 +541,15 @@ public class DashboardService {
                 .build();
     }
 
-    private TeamTodoProgressResponse buildTeamTodoResponse(ProjectTodo todo, List<TodoMemberProgress> progressRows) {
+    private TeamTodoProgressResponse buildTeamTodoResponse(ProjectTodo todo, List<TodoMemberProgress> progressRows,
+                                                           Map<String, String> todoIndex) {
         List<TodoAssignmentResponse> assignments = progressRows.stream()
                 .sorted(progressComparator())
-                .map(this::toAssignmentResponse)
+                .map(progress -> toAssignmentResponse(progress, todoIndex))
                 .toList();
 
         return TeamTodoProgressResponse.builder()
-                .todoId(resolveClientTodoId(todo))
+                .todoId(resolveClientTodoId(todo, todoIndex))
                 .projectId(todo.getProject().getId())
                 .projectName(todo.getProject().getName())
                 .minutesId(todo.getMinutes().getId())
@@ -524,13 +561,26 @@ public class DashboardService {
                 .build();
     }
 
+    /** 단건 갱신 응답용. 목록은 toAssignmentResponse(progress, index)로 한 번에 조회한다. */
     private TodoAssignmentResponse toAssignmentResponse(TodoMemberProgress progress) {
+        ProjectTodo todo = progress.getTodo();
+        Map<String, String> single = new HashMap<>();
+        String resolved = resolveClientTodoId(todo);
+        if (todo != null && todo.getMinutes() != null && todo.getSourceTodoId() != null) {
+            single.put(todo.getMinutes().getId() + "|id:" + todo.getSourceTodoId(), resolved);
+        } else if (todo != null && todo.getMinutes() != null && todo.getSourceIndex() != null) {
+            single.put(todo.getMinutes().getId() + "|idx:" + todo.getSourceIndex(), resolved);
+        }
+        return toAssignmentResponse(progress, single);
+    }
+
+    private TodoAssignmentResponse toAssignmentResponse(TodoMemberProgress progress, Map<String, String> todoIndex) {
         ProjectTodo todo = progress.getTodo();
         Project project = progress.getProject() != null ? progress.getProject() : todo.getProject();
 
         return TodoAssignmentResponse.builder()
                 .assignmentId(progress.getId())
-                .todoId(resolveClientTodoId(todo))
+                .todoId(resolveClientTodoId(todo, todoIndex))
                 .projectId(project.getId())
                 .projectName(project.getName())
                 .minutesId(todo.getMinutes().getId())

@@ -17,6 +17,8 @@ public interface IntegratedTodoRepository extends JpaRepository<IntegratedTodo, 
 
     Optional<IntegratedTodo> findByMinutesIdAndSourceTodoId(String minutesId, String sourceTodoId);
 
+    List<IntegratedTodo> findByProjectId(String projectId);
+
     void deleteByMinutesId(String minutesId);
 
     Optional<IntegratedTodo> findByIdAndProjectId(String id, String projectId);

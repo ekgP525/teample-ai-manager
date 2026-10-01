@@ -147,4 +147,15 @@ class ProjectInvitationServiceTest {
         assertThatThrownBy(() -> service.join("ABC123", new AuthenticatedUser("user-id", null, null)))
                 .isInstanceOf(ProjectInvitationService.InvitationExpiredException.class);
     }
+
+    @Test
+    void cancelActiveDeactivatesCodesForOwnersOnly() {
+        AuthenticatedUser owner = new AuthenticatedUser("owner-id", "owner", "owner@example.com");
+
+        service.cancelActive("project-id", owner, false);
+
+        verify(projectMemberService).ensureProjectOwner("project-id", owner, false);
+        verify(invitationRepository).deactivateByProjectId("project-id");
+        verify(invitationRepository, never()).save(org.mockito.ArgumentMatchers.any(ProjectInvitation.class));
+    }
 }

@@ -83,6 +83,35 @@ public class ProjectMemberService {
         projectMemberRepository.deleteByProjectIdAndUserId(projectId, target.getUserId());
     }
 
+    /** OWNER가 다른 MEMBER에게 소유권을 넘긴다. 넘긴 사람은 MEMBER가 되어 이후 프로젝트를 나갈 수 있다. */
+    @Transactional
+    public void transferOwnership(String projectId, String targetUserId, AuthenticatedUser requester, boolean admin) {
+        Project project = requireAccountManagedProject(projectId);
+        ensureProjectOwner(project, requester, admin);
+
+        ProjectMember target = projectMemberRepository.findByProjectIdAndUserId(projectId, targetUserId)
+                .orElseThrow(() -> new ProjectMemberNotFoundException("Project member not found."));
+        if (target.getRole() == ProjectMemberRole.OWNER) {
+            throw new ProjectMemberConflictException("This member is already the project owner.");
+        }
+        if (requester != null && !admin) {
+            ProjectMember current = projectMemberRepository.findByProjectIdAndUserId(projectId, requester.authUserId())
+                    .orElseThrow(() -> new ProjectMemberNotFoundException("Project membership not found."));
+            current.setRole(ProjectMemberRole.MEMBER);
+            projectMemberRepository.save(current);
+        } else {
+            // 관리자 테스트 인증은 멤버십 행이 없으므로 기존 OWNER 전원을 MEMBER로 내린다.
+            projectMemberRepository.findByProjectIdOrderByJoinedAtAsc(projectId).stream()
+                    .filter(member -> member.getRole() == ProjectMemberRole.OWNER)
+                    .forEach(member -> {
+                        member.setRole(ProjectMemberRole.MEMBER);
+                        projectMemberRepository.save(member);
+                    });
+        }
+        target.setRole(ProjectMemberRole.OWNER);
+        projectMemberRepository.save(target);
+    }
+
     @Transactional
     public void leaveProject(String projectId, AuthenticatedUser user) {
         Project project = requireAccountManagedProject(projectId);

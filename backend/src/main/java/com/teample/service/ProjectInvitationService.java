@@ -45,6 +45,13 @@ public class ProjectInvitationService {
         return ProjectInvitationResponse.from(invitationRepository.save(invitation));
     }
 
+    /** 현재 활성 코드를 무효화한다. 새 코드를 만들지 않으므로 이후 참여가 막힌다. */
+    @Transactional
+    public void cancelActive(String projectId, AuthenticatedUser user, boolean admin) {
+        projectMemberService.ensureProjectOwner(projectId, user, admin);
+        invitationRepository.deactivateByProjectId(projectId);
+    }
+
     @Transactional(readOnly = true)
     public ProjectInvitationResponse findActive(String projectId, AuthenticatedUser user, boolean admin) {
         projectMemberService.ensureProjectOwner(projectId, user, admin);
