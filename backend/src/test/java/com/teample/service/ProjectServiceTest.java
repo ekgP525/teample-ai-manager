@@ -311,7 +311,7 @@ class ProjectServiceTest {
 
     @Test
     void permanentlyDeleteRemovesProjectMembersBeforeProjectRow() {
-        Project project = Project.builder().id("project-id").build();
+        Project project = Project.builder().id("project-id").status(ProjectStatus.DELETED).build();
         when(projectRepository.findById("project-id")).thenReturn(Optional.of(project));
 
         boolean deleted = service.permanentlyDelete("project-id");
@@ -319,5 +319,17 @@ class ProjectServiceTest {
         assertThat(deleted).isTrue();
         verify(projectMemberRepository).deleteByProjectId("project-id");
         verify(projectRepository).delete(project);
+    }
+
+    @Test
+    void permanentlyDeleteRefusesProjectsThatAreNotInTrash() {
+        Project project = Project.builder().id("project-id").status(ProjectStatus.ACTIVE).build();
+        when(projectRepository.findById("project-id")).thenReturn(Optional.of(project));
+
+        boolean deleted = service.permanentlyDelete("project-id");
+
+        assertThat(deleted).isFalse();
+        verify(projectRepository, never()).delete(any());
+        verify(minutesRepository, never()).deleteByProjectId(any());
     }
 }

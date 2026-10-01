@@ -67,6 +67,10 @@ public class Minutes {
     @Column(name = "transcription_id")
     private String transcriptionId;
 
+    /** 클라이언트가 보낸 Idempotency-Key. 같은 키로 재요청하면 새로 만들지 않고 이 회의록을 돌려준다. */
+    @Column(name = "request_key", length = 100)
+    private String requestKey;
+
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();

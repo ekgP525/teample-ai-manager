@@ -38,11 +38,7 @@ public class ProjectTodoService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Project not found"));
 
         TodoStatus requestedStatus = status != null ? status : TodoStatus.TODO;
-        if (requestedStatus == TodoStatus.TODO) {
-            minutesRepository.findByProjectIdOrderByCreatedAtDesc(projectId)
-                    .forEach(this::synchronizeFromMinutes);
-        }
-
+        // 동기화는 회의록 생성·수정·삭제 시점에만 한다. 조회마다 쓰면 동시 요청이 유니크 제약에서 충돌한다.
         return todoRepository
                 .findByProjectIdAndStatusOrderByPriorityOrderAscCreatedAtAsc(projectId, requestedStatus)
                 .stream()
@@ -58,34 +54,50 @@ public class ProjectTodoService {
 
         List<TodoData> sourceTodos = minutes.getTodos() != null
                 ? minutes.getTodos() : Collections.emptyList();
-        Map<Integer, IntegratedTodo> existingByIndex = todoRepository
-                .findByMinutesIdOrderBySourceIndexAsc(minutes.getId())
-                .stream()
-                .filter(todo -> todo.getSourceIndex() != null)
-                .collect(Collectors.toMap(IntegratedTodo::getSourceIndex, Function.identity(), (first, ignored) -> first));
+        if (TodoIdentity.assignMissingIds(sourceTodos)) {
+            minutesRepository.save(minutes);
+        }
+
+        List<IntegratedTodo> existing = todoRepository.findByMinutesIdOrderBySourceIndexAsc(minutes.getId());
+        Map<String, IntegratedTodo> existingById = new HashMap<>();
+        Map<Integer, IntegratedTodo> legacyByIndex = new HashMap<>();
+        for (IntegratedTodo todo : existing) {
+            if (todo.getSourceTodoId() != null) {
+                existingById.putIfAbsent(todo.getSourceTodoId(), todo);
+            } else if (todo.getSourceIndex() != null) {
+                legacyByIndex.putIfAbsent(todo.getSourceIndex(), todo);
+            }
+        }
 
         int nextPriority = todoRepository.findMaxPriorityOrderByProjectId(minutes.getProject().getId());
         List<IntegratedTodo> changed = new ArrayList<>();
+        Set<String> activeSourceIds = new HashSet<>();
 
         for (int index = 0; index < sourceTodos.size(); index++) {
             TodoData source = sourceTodos.get(index);
             if (source == null || source.getTask() == null || source.getTask().isBlank()) {
                 continue;
             }
+            activeSourceIds.add(source.getId());
 
             String assigneeName = source.getName() != null && !source.getName().isBlank()
                     ? source.getName().trim() : "UNASSIGNED";
-            IntegratedTodo todo = existingByIndex.get(index);
+            IntegratedTodo todo = existingById.get(source.getId());
+            if (todo == null) {
+                // ID가 없던 시절의 행은 처음 한 번 위치로 이어 붙이고 ID를 채운다.
+                todo = legacyByIndex.remove(index);
+            }
             if (todo == null) {
                 todo = IntegratedTodo.builder()
                         .project(minutes.getProject())
                         .minutes(minutes)
-                        .sourceIndex(index)
                         .status(TodoStatus.TODO)
                         .priorityOrder(++nextPriority)
                         .build();
             }
 
+            todo.setSourceTodoId(source.getId());
+            todo.setSourceIndex(index);
             todo.setContent(source.getTask().trim());
             todo.setAssigneeName(assigneeName);
             todo.setAssigneeId(stableAssigneeId(minutes.getProject().getId(), assigneeName));
@@ -93,9 +105,28 @@ public class ProjectTodoService {
             changed.add(todo);
         }
 
+        List<IntegratedTodo> removed = existing.stream()
+                .filter(todo -> todo.getSourceTodoId() == null
+                        ? !changed.contains(todo)
+                        : !activeSourceIds.contains(todo.getSourceTodoId()))
+                .toList();
+        if (!removed.isEmpty()) {
+            // 회의록에서 지워진 업무는 보드에서도 내린다. 유니크 인덱스 충돌을 피하려고 삭제를 먼저 반영한다.
+            todoRepository.deleteAll(removed);
+            todoRepository.flush();
+        }
         if (!changed.isEmpty()) {
             todoRepository.saveAll(changed);
         }
+    }
+
+    /** 회의록 삭제 시 통합 업무 행도 함께 지운다. 그대로 두면 회의록 없는 고아 업무가 보드에 남는다. */
+    @Transactional
+    public void deleteByMinutes(Minutes minutes) {
+        if (minutes == null || minutes.getId() == null) {
+            return;
+        }
+        todoRepository.deleteByMinutesId(minutes.getId());
     }
 
     @Transactional
@@ -139,12 +170,17 @@ public class ProjectTodoService {
     }
 
     private void syncDashboardProgress(IntegratedTodo todo, boolean completed) {
-        if (todo.getProject() == null || todo.getMinutes() == null || todo.getSourceIndex() == null) {
+        if (todo.getProject() == null || todo.getMinutes() == null) {
             return;
         }
-        projectTodoRepository.findByProjectIdAndMinutesIdAndSourceIndex(
-                        todo.getProject().getId(), todo.getMinutes().getId(), todo.getSourceIndex())
-                .ifPresent(projectTodo -> todoMemberProgressRepository.findByTodoIdAndAssignedTrue(projectTodo.getId())
+        Optional<ProjectTodo> matched = todo.getSourceTodoId() != null
+                ? projectTodoRepository.findByMinutesIdAndSourceTodoId(todo.getMinutes().getId(), todo.getSourceTodoId())
+                : Optional.empty();
+        if (matched.isEmpty() && todo.getSourceIndex() != null) {
+            matched = projectTodoRepository.findByProjectIdAndMinutesIdAndSourceIndex(
+                    todo.getProject().getId(), todo.getMinutes().getId(), todo.getSourceIndex());
+        }
+        matched.ifPresent(projectTodo -> todoMemberProgressRepository.findByTodoIdAndAssignedTrue(projectTodo.getId())
                         .forEach(progress -> {
                             progress.setCompletedState(completed);
                             todoMemberProgressRepository.save(progress);

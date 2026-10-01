@@ -6,13 +6,7 @@ import lombok.*;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(
-        name = "project_todos",
-        uniqueConstraints = @UniqueConstraint(
-                name = "uk_project_todo_source",
-                columnNames = {"project_id", "minutes_id", "source_index"}
-        )
-)
+@Table(name = "project_todos")
 @Getter
 @Setter
 @NoArgsConstructor
@@ -34,6 +28,9 @@ public class ProjectTodo {
 
     @Column(name = "source_index", nullable = false)
     private Integer sourceIndex;
+
+    @Column(name = "source_todo_id", length = 64)
+    private String sourceTodoId;
 
     @Column(name = "source_assignee")
     private String sourceAssignee;

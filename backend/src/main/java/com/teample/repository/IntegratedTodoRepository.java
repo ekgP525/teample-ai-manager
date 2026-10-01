@@ -15,6 +15,10 @@ public interface IntegratedTodoRepository extends JpaRepository<IntegratedTodo, 
 
     List<IntegratedTodo> findByMinutesIdOrderBySourceIndexAsc(String minutesId);
 
+    Optional<IntegratedTodo> findByMinutesIdAndSourceTodoId(String minutesId, String sourceTodoId);
+
+    void deleteByMinutesId(String minutesId);
+
     Optional<IntegratedTodo> findByIdAndProjectId(String id, String projectId);
 
     Optional<IntegratedTodo> findByProjectIdAndMinutesIdAndSourceIndex(

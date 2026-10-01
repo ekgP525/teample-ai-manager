@@ -48,33 +48,77 @@ public class TodoProgressSyncService {
     @Transactional
     public void syncMinutes(Project project, Minutes minutes) {
         List<TodoData> sourceTodos = minutes.getTodos() != null ? minutes.getTodos() : List.of();
-        Set<Integer> activeSourceIndexes = new HashSet<>();
+        if (TodoIdentity.assignMissingIds(sourceTodos)) {
+            minutesRepository.save(minutes);
+        }
+        List<MemberRef> members = resolveProjectMembers(project);
 
+        List<ProjectTodo> existing = projectTodoRepository.findByMinutesId(minutes.getId());
+        Map<String, ProjectTodo> existingById = new LinkedHashMap<>();
+        Map<Integer, ProjectTodo> legacyByIndex = new LinkedHashMap<>();
+        for (ProjectTodo todo : existing) {
+            if (todo.getSourceTodoId() != null) {
+                existingById.putIfAbsent(todo.getSourceTodoId(), todo);
+            } else if (todo.getSourceIndex() != null) {
+                legacyByIndex.putIfAbsent(todo.getSourceIndex(), todo);
+            }
+        }
+
+        Set<String> activeSourceIds = new HashSet<>();
+        List<ProjectTodo> keep = new ArrayList<>();
         for (int index = 0; index < sourceTodos.size(); index++) {
-            final int sourceIndex = index;
             TodoData sourceTodo = sourceTodos.get(index);
             if (sourceTodo == null || sourceTodo.getTask() == null || sourceTodo.getTask().isBlank()) {
                 continue;
             }
+            activeSourceIds.add(sourceTodo.getId());
 
-            activeSourceIndexes.add(sourceIndex);
-            ProjectTodo projectTodo = projectTodoRepository
-                    .findByProjectIdAndMinutesIdAndSourceIndex(project.getId(), minutes.getId(), sourceIndex)
-                    .orElseGet(() -> ProjectTodo.builder()
-                            .project(project)
-                            .minutes(minutes)
-                            .sourceIndex(sourceIndex)
-                            .build());
-
+            ProjectTodo projectTodo = existingById.get(sourceTodo.getId());
+            if (projectTodo == null) {
+                projectTodo = legacyByIndex.remove(index);
+            }
+            if (projectTodo == null) {
+                projectTodo = ProjectTodo.builder()
+                        .project(project)
+                        .minutes(minutes)
+                        .build();
+            }
+            projectTodo.setSourceTodoId(sourceTodo.getId());
+            projectTodo.setSourceIndex(index);
             projectTodo.setSourceAssignee(normalizeOptional(sourceTodo.getName()));
             projectTodo.setTask(sourceTodo.getTask().trim());
             projectTodo.setDeadline(normalizeOptional(sourceTodo.getDeadline()));
-            ProjectTodo savedTodo = projectTodoRepository.save(projectTodo);
-
-            syncProgressRows(project, minutes, savedTodo, sourceTodo);
+            keep.add(projectTodo);
         }
 
-        removeDeletedSourceTodos(minutes.getId(), activeSourceIndexes);
+        // 회의록에서 사라진 업무를 먼저 지워 유니크 인덱스 충돌을 막는다.
+        for (ProjectTodo projectTodo : existing) {
+            boolean alive = projectTodo.getSourceTodoId() != null
+                    ? activeSourceIds.contains(projectTodo.getSourceTodoId())
+                    : keep.contains(projectTodo);
+            if (!alive) {
+                todoMemberProgressRepository.deleteByTodoId(projectTodo.getId());
+                projectTodoRepository.delete(projectTodo);
+            }
+        }
+        projectTodoRepository.flush();
+
+        for (int i = 0; i < keep.size(); i++) {
+            ProjectTodo savedTodo = projectTodoRepository.save(keep.get(i));
+            TodoData sourceTodo = findSource(sourceTodos, savedTodo.getSourceTodoId());
+            if (sourceTodo != null) {
+                syncProgressRows(project, minutes, savedTodo, sourceTodo, members);
+            }
+        }
+    }
+
+    private TodoData findSource(List<TodoData> sourceTodos, String id) {
+        for (TodoData todo : sourceTodos) {
+            if (todo != null && id != null && id.equals(todo.getId())) {
+                return todo;
+            }
+        }
+        return null;
     }
 
     @Transactional
@@ -89,8 +133,9 @@ public class TodoProgressSyncService {
         projectTodoRepository.deleteByProjectId(project.getId());
     }
 
-    private void syncProgressRows(Project project, Minutes minutes, ProjectTodo projectTodo, TodoData sourceTodo) {
-        List<MemberRef> assignedMembers = resolveAssignedMembers(sourceTodo.getName(), resolveProjectMembers(project));
+    private void syncProgressRows(Project project, Minutes minutes, ProjectTodo projectTodo, TodoData sourceTodo,
+                                  List<MemberRef> members) {
+        List<MemberRef> assignedMembers = resolveAssignedMembers(sourceTodo.getName(), members);
         Set<String> activeUserIds = new HashSet<>();
         Map<String, TodoMemberProgress> existingByUserId = new LinkedHashMap<>();
 
@@ -129,15 +174,6 @@ public class TodoProgressSyncService {
         }
     }
 
-    private void removeDeletedSourceTodos(String minutesId, Set<Integer> activeSourceIndexes) {
-        for (ProjectTodo projectTodo : projectTodoRepository.findByMinutesId(minutesId)) {
-            if (!activeSourceIndexes.contains(projectTodo.getSourceIndex())) {
-                todoMemberProgressRepository.deleteByTodoId(projectTodo.getId());
-                projectTodoRepository.delete(projectTodo);
-            }
-        }
-    }
-
     private List<MemberRef> resolveAssignedMembers(String sourceAssignee, List<MemberRef> members) {
         String assignee = normalizeOptional(sourceAssignee);
 
@@ -167,12 +203,11 @@ public class TodoProgressSyncService {
         return dedupe(resolved);
     }
 
+    /** 진행률 행의 userId는 Supabase sub다. 동명이인이 있어도 계정별로 따로 묶인다. */
     private List<MemberRef> resolveProjectMembers(Project project) {
         List<MemberRef> accountMembers = projectMemberRepository.findByProjectIdOrderByJoinedAtAsc(project.getId()).stream()
-                .map(ProjectMember::getDisplayName)
-                .map(this::normalizeOptional)
-                .filter(memberName -> memberName != null)
-                .map(memberName -> new MemberRef(memberName, memberName))
+                .filter(member -> member.getUserId() != null && normalizeOptional(member.getDisplayName()) != null)
+                .map(member -> new MemberRef(member.getUserId(), member.getDisplayName().trim()))
                 .distinct()
                 .toList();
         if (!accountMembers.isEmpty()) {
@@ -198,7 +233,7 @@ public class TodoProgressSyncService {
         return projectMembers.stream()
                 .filter(member -> member.memberName().equalsIgnoreCase(memberName))
                 .findFirst()
-                .orElseGet(() -> new MemberRef(memberName, memberName));
+                .orElseGet(() -> new MemberRef(memberName.toLowerCase(), memberName));
     }
 
     private List<MemberRef> dedupe(List<MemberRef> members) {

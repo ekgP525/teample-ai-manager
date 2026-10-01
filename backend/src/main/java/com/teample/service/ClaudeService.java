@@ -20,6 +20,7 @@ import java.util.Optional;
 public class ClaudeService {
 
     private static final long MAX_OUTPUT_TOKENS = 8192L;
+    static final int MAX_SHORT_TEXT = 255;
     private static final String MAX_TOKENS_STOP_REASON = "max_tokens";
 
     @Value("${anthropic.api-key:}")
@@ -164,8 +165,8 @@ public class ClaudeService {
 
             JsonNode root = objectMapper.readTree(json);
 
-            String title = root.path("title").asText("");
-            String topic = root.path("topic").asText("");
+            String title = truncate(root.path("title").asText(""), MAX_SHORT_TEXT);
+            String topic = truncate(root.path("topic").asText(""), MAX_SHORT_TEXT);
             List<String> discussions = jsonArrayToList(root.path("discussions"));
             List<String> decisions = jsonArrayToList(root.path("decisions"));
             List<String> pending = jsonArrayToList(root.path("pending"));
@@ -174,9 +175,10 @@ public class ClaudeService {
             List<TodoData> todos = new ArrayList<>();
             for (JsonNode node : root.path("todos")) {
                 todos.add(new TodoData(
-                        node.path("name").asText(""),
+                        TodoIdentity.newId(),
+                        truncate(node.path("name").asText(""), MAX_SHORT_TEXT),
                         node.path("task").asText(""),
-                        node.path("deadline").asText("미정")
+                        truncate(node.path("deadline").asText("미정"), MAX_SHORT_TEXT)
                 ));
             }
 
@@ -195,6 +197,15 @@ public class ClaudeService {
         } catch (Exception e) {
             throw new RuntimeException("Claude 응답 파싱 실패: " + e.getMessage(), e);
         }
+    }
+
+    /** DB 컬럼(VARCHAR 255)을 넘지 않도록 자른다. AI가 긴 문장을 돌려줘도 저장 단계에서 500이 나지 않게 한다. */
+    static String truncate(String value, int max) {
+        if (value == null) {
+            return "";
+        }
+        String trimmed = value.trim();
+        return trimmed.length() <= max ? trimmed : trimmed.substring(0, max);
     }
 
     private List<String> jsonArrayToList(JsonNode arrayNode) {
