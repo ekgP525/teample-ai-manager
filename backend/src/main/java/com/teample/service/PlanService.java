@@ -26,6 +26,8 @@ import java.util.stream.Collectors;
 @Service
 public class PlanService {
 
+    public static final String SUBSCRIPTION_GRANTER = "subscription";
+
     private static final Set<TranscriptionStatus> IN_FLIGHT =
             Set.of(TranscriptionStatus.QUEUED, TranscriptionStatus.PROCESSING);
 
@@ -114,6 +116,50 @@ public class PlanService {
         userPlan.setNote(note);
         userPlan.setGrantedBy(grantedBy);
         return userPlanRepository.save(userPlan);
+    }
+
+    /**
+     * 구독 결제 성공 시 호출. 기존 만료일이 더 늦거나(관리자 수동 부여 등) 무기한이면 그대로 두고,
+     * 그렇지 않을 때만 만료일을 늘린다. 절대 줄이지 않는다.
+     */
+    @Transactional
+    public UserPlan grantAtLeast(String targetUserId, PlanType plan, LocalDateTime expiresAt, String note, String grantedBy) {
+        if (targetUserId == null || targetUserId.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "대상 사용자 ID가 비어 있습니다.");
+        }
+        if (plan == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "요금제 값이 비어 있습니다.");
+        }
+        Optional<UserPlan> existing = userPlanRepository.findById(targetUserId.trim());
+        if (existing.isPresent() && existing.get().getPlan() == plan) {
+            LocalDateTime current = existing.get().getExpiresAt();
+            boolean currentIsLaterOrUnlimited = current == null || (expiresAt != null && !current.isBefore(expiresAt));
+            if (currentIsLaterOrUnlimited) {
+                return existing.get();
+            }
+        }
+        return grant(targetUserId, plan, expiresAt, note, grantedBy);
+    }
+
+    /**
+     * 구독 해지 시 호출. 요금제 행이 구독 결제로 부여된 것(grantedBy == "subscription")일 때만 만료일을 당긴다.
+     * 관리자가 수동으로 준 요금제는 건드리지 않는다.
+     */
+    @Transactional
+    public Optional<UserPlan> shortenSubscriptionGrant(String targetUserId, LocalDateTime expiresAt, String note) {
+        if (targetUserId == null || targetUserId.isBlank()) {
+            return Optional.empty();
+        }
+        return userPlanRepository.findById(targetUserId.trim())
+                .filter(userPlan -> SUBSCRIPTION_GRANTER.equals(userPlan.getGrantedBy()))
+                .map(userPlan -> {
+                    if (expiresAt != null && (userPlan.getExpiresAt() == null || userPlan.getExpiresAt().isAfter(expiresAt))) {
+                        userPlan.setExpiresAt(expiresAt);
+                        userPlan.setNote(note);
+                        return userPlanRepository.save(userPlan);
+                    }
+                    return userPlan;
+                });
     }
 
     @Transactional(readOnly = true)

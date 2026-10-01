@@ -100,6 +100,7 @@ public class TranscriptionController {
                     return ResponseEntity.ok()
                             .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename*=UTF-8''" + encoded)
                             .header(HttpHeaders.ACCEPT_RANGES, "bytes")
+                            .header("X-Content-Type-Options", "nosniff")
                             .contentType(MediaType.parseMediaType(audio.contentType()))
                             .body(audio.resource());
                 })

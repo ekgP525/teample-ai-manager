@@ -52,6 +52,15 @@ class KakaoLinkAndReminderTest {
     }
 
     @Test
+    void secretCipherRefusesToStartWithoutKeyWhenKakaoIsConfigured() {
+        assertThatThrownBy(() -> new SecretCipher("", "kakao-rest-key"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("APP_TOKEN_ENCRYPTION_KEY");
+        assertThat(new SecretCipher("some-key", "kakao-rest-key").isEncryptionEnabled()).isTrue();
+        assertThat(new SecretCipher("", "").isEncryptionEnabled()).isFalse();
+    }
+
+    @Test
     void kakaoTokenParsingAndAuthorizeUrl() throws Exception {
         KakaoApiClient client = new KakaoApiClient("https://kauth.kakao.com", "https://kapi.kakao.com", "rest-key", "");
         String url = client.buildAuthorizeUrl("http://localhost:3000/kakao/callback", "st");
@@ -76,29 +85,80 @@ class KakaoLinkAndReminderTest {
         when(links.findById("user-1")).thenReturn(Optional.empty());
         when(links.save(any(KakaoLink.class))).thenAnswer(inv -> inv.getArgument(0));
         SecretCipher cipher = new SecretCipher("k");
+        when(api.buildAuthorizeUrl(anyString(), anyString())).thenAnswer(inv -> "https://kauth.kakao.com/oauth/authorize?state=" + inv.getArgument(1));
         KakaoLinkService service = new KakaoLinkService(links, api, cipher);
-        String state = KakaoLinkService.stateFor("user-1");
+        String redirectUri = "http://localhost:3000/kakao/callback";
+        String state = service.connectUrl(user, redirectUri).state();
+        assertThat(state).isNotBlank();
+        assertThat(service.connectUrl(user, redirectUri).state()).isNotEqualTo(state);
+        state = service.connectUrl(user, redirectUri).state();
 
-        when(api.exchangeCode("code", "http://localhost:3000/kakao/callback"))
+        when(api.exchangeCode("code", redirectUri))
                 .thenReturn(new KakaoApiClient.TokenResponse("at", 43199, "rt", 5184000L, "talk_message profile"));
         when(api.fetchKakaoUserId("at")).thenReturn("9876");
 
-        KakaoLinkResponse response = service.link(user, "code", "http://localhost:3000/kakao/callback", state);
+        KakaoLinkResponse response = service.link(user, "code", redirectUri, state);
 
         assertThat(response.linked()).isTrue();
         assertThat(response.deadlineReminders()).isTrue();
         verify(links).save(any(KakaoLink.class));
 
-        assertThatThrownBy(() -> service.link(user, "code", "http://localhost:3000/kakao/callback", "wrong-state"))
+        // state는 한 번 쓰면 소비된다.
+        String usedState = state;
+        assertThatThrownBy(() -> service.link(user, "code", redirectUri, usedState))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("400");
 
-        when(api.exchangeCode("code2", "http://localhost:3000/kakao/callback"))
+        String fresh = service.connectUrl(user, redirectUri).state();
+        assertThatThrownBy(() -> service.link(user, "code", redirectUri, "wrong-state"))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("400");
+        assertThatThrownBy(() -> service.link(user, "code", redirectUri, null))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("400");
+        assertThatThrownBy(() -> service.link(new AuthenticatedUser("user-2", "다른", null), "code", redirectUri, fresh))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("400");
+
+        when(api.exchangeCode("code2", redirectUri))
                 .thenReturn(new KakaoApiClient.TokenResponse("at2", 43199, "rt2", 5184000L, "profile"));
         when(api.fetchKakaoUserId("at2")).thenReturn("1");
-        assertThatThrownBy(() -> service.link(user, "code2", "http://localhost:3000/kakao/callback", state))
+        assertThatThrownBy(() -> service.link(user, "code2", redirectUri, fresh))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("메시지 전송 동의");
+    }
+
+    @Test
+    void invalidGrantOnRefreshClearsRefreshTokenAndAsksToReconnect() throws Exception {
+        KakaoLinkRepository links = mock(KakaoLinkRepository.class);
+        KakaoApiClient api = mock(KakaoApiClient.class);
+        SecretCipher cipher = new SecretCipher("");
+        KakaoLink link = KakaoLink.builder()
+                .userId("user-1")
+                .accessToken(cipher.encrypt("old"))
+                .refreshToken(cipher.encrypt("rt"))
+                .accessExpiresAt(LocalDateTime.now().minusMinutes(1))
+                .refreshExpiresAt(LocalDateTime.now().plusDays(30))
+                .deadlineReminders(true)
+                .build();
+        when(links.findById("user-1")).thenReturn(Optional.of(link));
+        when(links.save(any(KakaoLink.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(api.refresh("rt")).thenThrow(new KakaoApiClient.KakaoApiException(
+                "카카오 토큰 갱신 실패 (invalid_grant) refresh token expired", 400, "invalid_grant"));
+        KakaoLinkService service = new KakaoLinkService(links, api, cipher);
+
+        assertThatThrownBy(() -> service.sendToSelf("user-1", "hello", "http://localhost:3000/dashboard", "열기"))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("409")
+                .hasMessageContaining("다시 연결");
+
+        assertThat(link.getRefreshToken()).isNull();
+        assertThat(link.getRefreshExpiresAt()).isNull();
+        assertThat(link.isRefreshTokenExpired(LocalDateTime.now())).isTrue();
+        verify(links).save(link);
+        verify(api, never()).sendMemo(anyString(), anyString(), anyString(), anyString());
+        assertThat(new KakaoApiClient.KakaoApiException("x", 400, "KOE319").isInvalidGrant()).isTrue();
+        assertThat(new KakaoApiClient.KakaoApiException("x", 500, "-1").isInvalidGrant()).isFalse();
     }
 
     @Test

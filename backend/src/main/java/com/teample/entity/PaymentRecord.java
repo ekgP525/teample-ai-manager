@@ -25,6 +25,8 @@ import java.time.LocalDateTime;
 @Builder
 public class PaymentRecord {
 
+    /** 토스에 승인 요청을 보내기 직전에 만든 상태. 네트워크 오류로 결과를 모르면 이 상태로 남는다. */
+    public static final String STATUS_PENDING = "PENDING";
     public static final String STATUS_DONE = "DONE";
     public static final String STATUS_FAILED = "FAILED";
 
@@ -58,6 +60,10 @@ public class PaymentRecord {
 
     @Column(name = "approved_at")
     private LocalDateTime approvedAt;
+
+    /** 이 결제가 여는 구독 기간의 시작. orderId는 (구독, 기간 시작)으로 결정된다. */
+    @Column(name = "period_start")
+    private LocalDateTime periodStart;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
