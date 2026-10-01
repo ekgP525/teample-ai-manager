@@ -26,6 +26,14 @@ export default function LandingPage() {
             로그인
           </Link>
         </div>
+        <p className="flex gap-4 text-xs text-zinc-400">
+          <Link href="/privacy" className="hover:underline">
+            개인정보처리방침
+          </Link>
+          <Link href="/terms" className="hover:underline">
+            이용약관
+          </Link>
+        </p>
       </div>
     </main>
   );
