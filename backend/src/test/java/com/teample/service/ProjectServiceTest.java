@@ -3,6 +3,7 @@ package com.teample.service;
 import com.teample.dto.ProjectRequest;
 import com.teample.dto.ProjectResponse;
 import com.teample.entity.Project;
+import com.teample.entity.ProjectMember;
 import com.teample.entity.ProjectStatus;
 import com.teample.repository.IntegratedTodoRepository;
 import com.teample.repository.MinutesRepository;
@@ -162,17 +163,18 @@ class ProjectServiceTest {
     }
 
     @Test
-    void findAllWithAuthenticatedUserReturnsAccessibleProjectsOnly() {
+    void findAllWithAuthenticatedUserListsOnlyProjectsFromMembershipRows() {
         AuthenticatedUser user = new AuthenticatedUser("auth-user-1", "member", "member@example.com");
-        Project accessible = Project.builder().id("project-accessible").name("accessible").members(List.of("member")).build();
-        Project blocked = Project.builder().id("project-blocked").name("blocked").members(List.of("other")).build();
-        when(projectRepository.findAll()).thenReturn(List.of(accessible, blocked));
-        when(projectMemberService.canAccessProject(accessible, user, false)).thenReturn(true);
-        when(projectMemberService.canAccessProject(blocked, user, false)).thenReturn(false);
+        Project accessible = Project.builder().id("project-accessible").name("accessible").build();
+        Project deleted = Project.builder().id("project-deleted").name("deleted").status(ProjectStatus.DELETED).build();
+        when(projectMemberRepository.findByUserIdOrderByJoinedAtAsc("auth-user-1")).thenReturn(List.of(
+                ProjectMember.builder().project(accessible).userId("auth-user-1").displayName("member").build(),
+                ProjectMember.builder().project(deleted).userId("auth-user-1").displayName("member").build()));
 
         List<ProjectResponse> responses = service.findAll(user, false);
 
         assertThat(responses).extracting(ProjectResponse::getId).containsExactly("project-accessible");
+        verify(projectRepository, never()).findAll();
     }
 
     @Test
@@ -203,8 +205,6 @@ class ProjectServiceTest {
         Project first = Project.builder().id("project-1").name("first").build();
         Project second = Project.builder().id("project-2").name("second").build();
         when(projectRepository.findAll()).thenReturn(List.of(first, second));
-        when(projectMemberService.canAccessProject(first, admin, true)).thenReturn(true);
-        when(projectMemberService.canAccessProject(second, admin, true)).thenReturn(true);
 
         List<ProjectResponse> responses = service.findAll(admin, true);
 

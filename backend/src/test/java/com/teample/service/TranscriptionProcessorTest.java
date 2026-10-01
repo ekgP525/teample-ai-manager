@@ -56,7 +56,7 @@ class TranscriptionProcessorTest {
         MediaConverter converter = mock(MediaConverter.class);
         when(converter.isAvailable()).thenReturn(false);
 
-        new TranscriptionProcessor(repository, storage, converter, provider, DIRECT, 1, 1).process("tr-1");
+        new TranscriptionProcessor(repository, storage, converter, provider, DIRECT, 1, 1, 600).process("tr-1");
 
         assertThat(transcription.getStatus()).isEqualTo(TranscriptionStatus.COMPLETED);
         assertThat(transcription.getProviderJobId()).isEqualTo("job-1");
@@ -80,7 +80,7 @@ class TranscriptionProcessorTest {
         MediaConverter converter = mock(MediaConverter.class);
         when(converter.isAvailable()).thenReturn(false);
 
-        new TranscriptionProcessor(repository, storage, converter, provider, DIRECT, 1, 1).process("tr-1");
+        new TranscriptionProcessor(repository, storage, converter, provider, DIRECT, 1, 1, 600).process("tr-1");
 
         assertThat(transcription.getStatus()).isEqualTo(TranscriptionStatus.FAILED);
         assertThat(transcription.getErrorMessage()).contains("ffmpeg");
@@ -101,7 +101,7 @@ class TranscriptionProcessorTest {
         SpeechToTextProvider provider = mock(SpeechToTextProvider.class);
         when(provider.poll(eq("job-9"))).thenReturn(SpeechToTextProvider.PollResult.failed("quota exceeded"));
 
-        new TranscriptionProcessor(repository, storage, mock(MediaConverter.class), provider, DIRECT, 1, 1).process("tr-1");
+        new TranscriptionProcessor(repository, storage, mock(MediaConverter.class), provider, DIRECT, 1, 1, 600).process("tr-1");
 
         assertThat(transcription.getStatus()).isEqualTo(TranscriptionStatus.FAILED);
         assertThat(transcription.getErrorMessage()).isEqualTo("quota exceeded");
@@ -125,7 +125,7 @@ class TranscriptionProcessorTest {
                 .thenThrow(new SpeechToTextProvider.SpeechToTextException("502"))
                 .thenReturn(SpeechToTextProvider.PollResult.completed(List.of(new TranscriptSegment("0", 0, 1, "a")), 1L));
 
-        new TranscriptionProcessor(repository, storage, mock(MediaConverter.class), provider, DIRECT, 1, 1).process("tr-1");
+        new TranscriptionProcessor(repository, storage, mock(MediaConverter.class), provider, DIRECT, 1, 1, 600).process("tr-1");
 
         assertThat(transcription.getStatus()).isEqualTo(TranscriptionStatus.COMPLETED);
         verify(provider, times(5)).poll("job-9");
@@ -143,7 +143,7 @@ class TranscriptionProcessorTest {
         SpeechToTextProvider provider = mock(SpeechToTextProvider.class);
         when(provider.poll("job-9")).thenThrow(new SpeechToTextProvider.SpeechToTextException("STT down"));
 
-        new TranscriptionProcessor(repository, storage, mock(MediaConverter.class), provider, DIRECT, 1, 1).process("tr-1");
+        new TranscriptionProcessor(repository, storage, mock(MediaConverter.class), provider, DIRECT, 1, 1, 600).process("tr-1");
 
         assertThat(transcription.getStatus()).isEqualTo(TranscriptionStatus.FAILED);
         assertThat(transcription.getErrorMessage()).isEqualTo("STT down");
@@ -163,7 +163,7 @@ class TranscriptionProcessorTest {
         when(provider.poll("job-9")).thenThrow(new SpeechToTextProvider.SpeechToTextException(
                 "전사 상태 조회이(가) 중단되었습니다.", new InterruptedException()));
         TranscriptionProcessor processor =
-                new TranscriptionProcessor(repository, storage, mock(MediaConverter.class), provider, DIRECT, 1, 1);
+                new TranscriptionProcessor(repository, storage, mock(MediaConverter.class), provider, DIRECT, 1, 1, 600);
 
         try {
             processor.process("tr-1");
@@ -197,7 +197,7 @@ class TranscriptionProcessorTest {
         when(provider.poll("job-9")).thenReturn(SpeechToTextProvider.PollResult.completed(
                 List.of(new TranscriptSegment("0", 0, 1, "a")), 1L));
 
-        new TranscriptionProcessor(repository, storage, mock(MediaConverter.class), provider, DIRECT, 1, 1).process("tr-1");
+        new TranscriptionProcessor(repository, storage, mock(MediaConverter.class), provider, DIRECT, 1, 1, 600).process("tr-1");
 
         verify(repository, never()).save(any());
     }
@@ -223,7 +223,7 @@ class TranscriptionProcessorTest {
         when(provider.poll("job-9")).thenReturn(SpeechToTextProvider.PollResult.completed(
                 List.of(new TranscriptSegment("0", 0, 1, "a")), 1L));
 
-        new TranscriptionProcessor(repository, storage, mock(MediaConverter.class), provider, DIRECT, 1, 1).process("tr-1");
+        new TranscriptionProcessor(repository, storage, mock(MediaConverter.class), provider, DIRECT, 1, 1, 600).process("tr-1");
 
         assertThat(saved).containsExactly(fresh);
         assertThat(fresh.getStatus()).isEqualTo(TranscriptionStatus.COMPLETED);
@@ -251,7 +251,7 @@ class TranscriptionProcessorTest {
             submitted.add(task);
         };
         TranscriptionProcessor processor = new TranscriptionProcessor(
-                repository, storage, mock(MediaConverter.class), mock(SpeechToTextProvider.class), executor, 1, 1);
+                repository, storage, mock(MediaConverter.class), mock(SpeechToTextProvider.class), executor, 1, 1, 600);
 
         processor.resumeUnfinished();
         assertThat(submitted).hasSize(2);
