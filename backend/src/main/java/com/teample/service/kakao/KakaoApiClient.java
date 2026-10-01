@@ -222,5 +222,14 @@ public class KakaoApiClient {
         public boolean isScopeMissing() {
             return "-402".equals(code);
         }
+
+        /** 리프레시 토큰이 무효(invalid_grant, KOE319)라 다시 연결해야 할 때 */
+        public boolean isInvalidGrant() {
+            if ("invalid_grant".equals(code) || "KOE319".equals(code)) {
+                return true;
+            }
+            String message = getMessage();
+            return message != null && (message.contains("invalid_grant") || message.contains("KOE319"));
+        }
     }
 }

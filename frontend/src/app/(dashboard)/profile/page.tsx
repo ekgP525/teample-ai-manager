@@ -1,9 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import { KakaoLinkCard } from "@/components/kakao-link-card";
 import { SignOutButton } from "@/components/sign-out-button";
 import { SubscriptionCard } from "@/components/subscription-card";
+import { hasAdminTestSession } from "@/lib/admin-test-auth";
+import { getCurrentAuthUser } from "@/lib/api/auth";
 import { getMyPlan } from "@/lib/api/plan";
 import { supabase } from "@/lib/supabase";
 import type { UserPlan } from "@/types/transcription";
@@ -16,6 +19,23 @@ interface ProfileData {
 }
 
 export default function ProfilePage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="flex flex-1 items-center justify-center px-4 py-12 text-sm text-zinc-500">
+          프로필을 불러오는 중...
+        </main>
+      }
+    >
+      <ProfileContent />
+    </Suspense>
+  );
+}
+
+function ProfileContent() {
+  const searchParams = useSearchParams();
+  const kakaoLinkedNotice =
+    searchParams.get("kakao") === "linked" ? "카카오 연결을 완료했습니다." : "";
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
@@ -47,27 +67,43 @@ export default function ProfilePage() {
 
   useEffect(() => {
     let isMounted = true;
+    const controller = new AbortController();
 
-    void supabase.auth
-      .getUser()
-      .then(({ data, error: userError }) => {
-        if (userError) throw userError;
-        if (!isMounted || !data.user) return;
+    async function loadProfile(): Promise<ProfileData> {
+      // 관리자 테스트 세션은 Supabase 사용자가 없으므로 백엔드 /api/auth/me 정보를 쓴다.
+      if (hasAdminTestSession()) {
+        const user = await getCurrentAuthUser(controller.signal);
+        return {
+          name: user.memberKey,
+          email: user.email ?? "관리자 테스트 계정",
+          provider: "관리자 테스트",
+          userId: user.authUserId,
+        };
+      }
 
-        const metadata = data.user.user_metadata;
-        setProfile({
-          name:
-            metadata.name ||
-            metadata.full_name ||
-            data.user.email?.split("@")[0] ||
-            "사용자",
-          email: data.user.email || "이메일 정보 없음",
-          provider: formatProvider(data.user.app_metadata.provider),
-          userId: data.user.id,
-        });
+      const { data, error: userError } = await supabase.auth.getUser();
+      if (userError) throw userError;
+      if (!data.user) throw new Error("로그인 사용자 정보가 없습니다.");
+
+      const metadata = data.user.user_metadata;
+      return {
+        name:
+          metadata.name ||
+          metadata.full_name ||
+          data.user.email?.split("@")[0] ||
+          "사용자",
+        email: data.user.email || "이메일 정보 없음",
+        provider: formatProvider(data.user.app_metadata.provider),
+        userId: data.user.id,
+      };
+    }
+
+    void loadProfile()
+      .then((data) => {
+        if (isMounted) setProfile(data);
       })
       .catch(() => {
-        if (isMounted) {
+        if (isMounted && !controller.signal.aborted) {
           setError("프로필 정보를 불러오지 못했습니다.");
         }
       })
@@ -77,6 +113,7 @@ export default function ProfilePage() {
 
     return () => {
       isMounted = false;
+      controller.abort();
     };
   }, []);
 
@@ -193,7 +230,7 @@ export default function ProfilePage() {
         {!isLoading && profile && (
           <>
             <SubscriptionCard plan={plan} onPlanChanged={() => void loadPlan()} />
-            <KakaoLinkCard />
+            <KakaoLinkCard initialNotice={kakaoLinkedNotice} />
           </>
         )}
       </div>

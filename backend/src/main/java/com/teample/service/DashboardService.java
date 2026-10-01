@@ -301,13 +301,6 @@ public class DashboardService {
                 .filter(Project::isVisibleInActiveList)
                 .forEach(project -> projectsById.putIfAbsent(project.getId(), project));
 
-        projectRepository.findAll().stream()
-                .filter(Project::isVisibleInActiveList)
-                .filter(project -> project.getId() != null && !projectsById.containsKey(project.getId()))
-                .filter(project -> !projectMemberRepository.existsByProjectId(project.getId()))
-                .filter(project -> projectMemberService.canAccessProject(project, user, false))
-                .forEach(project -> projectsById.putIfAbsent(project.getId(), project));
-
         return new ArrayList<>(projectsById.values());
     }
 
@@ -387,13 +380,21 @@ public class DashboardService {
         }
     }
 
+    /** 관리자 테스트 인증(X-Current-User-Id) 전용 경로. 계정 행의 ID·표시 이름, 없으면 옛 members 목록으로 판정한다. */
     private boolean isProjectMember(Project project, String currentUserId) {
         String resolvedUserId = normalizeOptionalUserId(currentUserId);
-        if (resolvedUserId == null || project.getMembers() == null) {
+        if (resolvedUserId == null || project == null || project.getId() == null) {
             return false;
         }
-
-        return project.getMembers().stream()
+        if (projectMemberRepository.existsByProjectIdAndUserId(project.getId(), resolvedUserId)) {
+            return true;
+        }
+        boolean matchesDisplayName = projectMemberRepository.findByProjectIdOrderByJoinedAtAsc(project.getId()).stream()
+                .anyMatch(member -> resolvedUserId.equalsIgnoreCase(normalizeOptionalUserId(member.getDisplayName())));
+        if (matchesDisplayName) {
+            return true;
+        }
+        return project.getMembers() != null && project.getMembers().stream()
                 .map(this::normalizeOptionalUserId)
                 .anyMatch(member -> member != null && member.equalsIgnoreCase(resolvedUserId));
     }
@@ -437,7 +438,17 @@ public class DashboardService {
     }
 
     private Optional<ProjectTodo> findDashboardTodo(IntegratedTodo todo) {
-        if (todo.getProject() == null || todo.getMinutes() == null || todo.getSourceIndex() == null) {
+        if (todo.getProject() == null || todo.getMinutes() == null) {
+            return Optional.empty();
+        }
+        if (todo.getSourceTodoId() != null) {
+            Optional<ProjectTodo> byId = projectTodoRepository
+                    .findByMinutesIdAndSourceTodoId(todo.getMinutes().getId(), todo.getSourceTodoId());
+            if (byId.isPresent()) {
+                return byId;
+            }
+        }
+        if (todo.getSourceIndex() == null) {
             return Optional.empty();
         }
         return projectTodoRepository.findByProjectIdAndMinutesIdAndSourceIndex(
@@ -701,7 +712,17 @@ public class DashboardService {
     }
 
     private Optional<IntegratedTodo> findIntegratedTodo(ProjectTodo todo) {
-        if (todo == null || todo.getProject() == null || todo.getMinutes() == null || todo.getSourceIndex() == null) {
+        if (todo == null || todo.getProject() == null || todo.getMinutes() == null) {
+            return Optional.empty();
+        }
+        if (todo.getSourceTodoId() != null) {
+            Optional<IntegratedTodo> byId = integratedTodoRepository
+                    .findByMinutesIdAndSourceTodoId(todo.getMinutes().getId(), todo.getSourceTodoId());
+            if (byId.isPresent()) {
+                return byId;
+            }
+        }
+        if (todo.getSourceIndex() == null) {
             return Optional.empty();
         }
         return integratedTodoRepository.findByProjectIdAndMinutesIdAndSourceIndex(
@@ -715,7 +736,7 @@ public class DashboardService {
 
         try {
             LocalDate deadlineDate = LocalDate.parse(deadline);
-            return deadlineDate.isBefore(LocalDate.now()) ? OVERDUE : ON_TRACK;
+            return deadlineDate.isBefore(AppClock.today()) ? OVERDUE : ON_TRACK;
         } catch (DateTimeParseException e) {
             return UNKNOWN_DEADLINE;
         }
@@ -743,8 +764,15 @@ public class DashboardService {
         }
     }
 
+    /** 진행률 행은 Supabase sub로 묶인다. 관리자 테스트 인증은 X-Current-User-Id(표시 이름)로 옛 행을 볼 수 있게 유지한다. */
     private String dashboardUserId(AuthenticatedUser user) {
-        return user == null ? null : normalizeOptionalUserId(user.memberKey());
+        if (user == null) {
+            return null;
+        }
+        if (user.authUserId() != null && user.authUserId().startsWith("admin-test:")) {
+            return normalizeOptionalUserId(user.memberKey());
+        }
+        return normalizeOptionalUserId(user.authUserId());
     }
 
     private String normalizeOptionalUserId(String userId) {

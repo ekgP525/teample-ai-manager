@@ -10,6 +10,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -22,7 +23,10 @@ import java.time.LocalDateTime;
  * 토스페이먼츠 빌링키 기반 월 구독. 한 사용자는 구독 하나만 가진다.
  */
 @Entity
-@Table(name = "subscriptions")
+@Table(
+        name = "subscriptions",
+        uniqueConstraints = @UniqueConstraint(name = "uk_subscriptions_user", columnNames = "user_id")
+)
 @Getter
 @Setter
 @NoArgsConstructor

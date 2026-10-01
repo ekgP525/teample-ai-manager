@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ApiError } from "@/lib/api/client";
 import { getMinutes, updateMinutes } from "@/lib/api/minutes";
@@ -27,6 +27,8 @@ export default function EditMinutesPage() {
   const [minutesNotFound, setMinutesNotFound] = useState(false);
   const [isProjectDeleted, setIsProjectDeleted] = useState(false);
   const currentKey = `${id}/${minutesId}`;
+  // 가장 최근 로드 요청 번호. 이전 요청(예: 다른 회의록의 재시도)의 결과는 무시한다.
+  const loadRequestRef = useRef(0);
 
   const applyMinutes = (data: Minutes) => {
     setTitle(data.title || "");
@@ -40,17 +42,22 @@ export default function EditMinutesPage() {
 
   const loadMinutes = useCallback(
     async (signal?: AbortSignal) => {
+      const requestId = ++loadRequestRef.current;
+      const isStale = () =>
+        signal?.aborted || requestId !== loadRequestRef.current;
+
       try {
         const [minutesData, projectData] = await Promise.all([
           getMinutes(id, minutesId, { signal }),
           getProject(id, signal),
         ]);
+        if (isStale()) return;
         applyMinutes(minutesData);
         setIsProjectDeleted(projectData.status === "DELETED");
         setLoadError("");
         setMinutesNotFound(false);
       } catch (error) {
-        if (signal?.aborted) return;
+        if (isStale()) return;
 
         if (error instanceof ApiError && error.status === 404) {
           setMinutesNotFound(true);
@@ -62,7 +69,7 @@ export default function EditMinutesPage() {
           );
         }
       } finally {
-        if (!signal?.aborted) {
+        if (!isStale()) {
           setLoadedKey(currentKey);
           setIsLoading(false);
         }
@@ -80,6 +87,7 @@ export default function EditMinutesPage() {
 
   useEffect(() => {
     const controller = new AbortController();
+    loadRequestRef.current += 1;
 
     void Promise.all([
       getMinutes(id, minutesId, { signal: controller.signal }),
@@ -149,6 +157,8 @@ export default function EditMinutesPage() {
         pending: normalizeItems(pending),
         todos: todos
           .map((todo) => ({
+            // 기존 행은 백엔드가 준 id를 유지하고, 새로 추가한 행은 id 없이 보낸다.
+            id: todo.id ?? undefined,
             name: todo.name.trim(),
             task: todo.task.trim(),
             deadline: todo.deadline.trim(),
@@ -189,7 +199,11 @@ export default function EditMinutesPage() {
     setList(list.filter((_, itemIndex) => itemIndex !== index));
   };
 
-  const updateTodo = (index: number, field: keyof Todo, value: string) => {
+  const updateTodo = (
+    index: number,
+    field: "name" | "task" | "deadline",
+    value: string
+  ) => {
     const next = [...todos];
     next[index] = { ...next[index], [field]: value };
     setTodos(next);
@@ -392,6 +406,7 @@ export default function EditMinutesPage() {
                     onChange={(event) =>
                       updateTodo(index, "name", event.target.value)
                     }
+                    onKeyDown={preventEnterSubmit}
                     className="min-w-0 rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:border-zinc-700 dark:bg-zinc-900"
                   />
                   <input
@@ -402,6 +417,7 @@ export default function EditMinutesPage() {
                     onChange={(event) =>
                       updateTodo(index, "task", event.target.value)
                     }
+                    onKeyDown={preventEnterSubmit}
                     className="min-w-0 rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:border-zinc-700 dark:bg-zinc-900"
                   />
                   <input
@@ -412,6 +428,7 @@ export default function EditMinutesPage() {
                     onChange={(event) =>
                       updateTodo(index, "deadline", event.target.value)
                     }
+                    onKeyDown={preventEnterSubmit}
                     className="min-w-0 rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:border-zinc-700 dark:bg-zinc-900"
                   />
                   <button
@@ -454,6 +471,11 @@ function normalizeItems(items: string[]) {
   return items.map((item) => item.trim()).filter(Boolean);
 }
 
+/** 목록 항목 입력란에서 Enter를 눌러도 폼 전체가 제출되지 않게 한다. */
+function preventEnterSubmit(event: React.KeyboardEvent<HTMLInputElement>) {
+  if (event.key === "Enter") event.preventDefault();
+}
+
 function EditableList({
   title,
   items,
@@ -487,6 +509,7 @@ function EditableList({
               aria-label={`${title} ${index + 1}`}
               value={item}
               onChange={(event) => onChange(index, event.target.value)}
+              onKeyDown={preventEnterSubmit}
               className="min-w-0 flex-1 rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:border-zinc-700 dark:bg-zinc-900"
             />
             <button

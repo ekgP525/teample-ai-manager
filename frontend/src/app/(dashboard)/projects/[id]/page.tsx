@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ProjectTodoBoard } from "@/components/project-todo-board";
 import { ProjectInviteDialog } from "@/components/project-invite-dialog";
@@ -55,9 +55,12 @@ export default function ProjectDetailPage() {
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [isLeaving, setIsLeaving] = useState(false);
   const [memberActionError, setMemberActionError] = useState("");
+  // 가장 최근 로드 요청 번호. 이전 요청(예: 다른 프로젝트의 재시도)의 결과는 무시한다.
+  const loadRequestRef = useRef(0);
 
   useEffect(() => {
     const controller = new AbortController();
+    loadRequestRef.current += 1;
 
     void fetchProjectData(id, controller.signal)
       .then((data) => {
@@ -100,17 +103,20 @@ export default function ProjectDetailPage() {
   }, [id]);
 
   const handleRetry = async () => {
+    const requestId = ++loadRequestRef.current;
     setIsLoading(true);
     setLoadError("");
     setProjectNotFound(false);
 
     try {
       const data = await fetchProjectData(id);
+      if (requestId !== loadRequestRef.current) return;
       setProject(data.project);
       setMinutesList(data.minutesList);
       setAccountMembers(data.accountMembers);
       setCurrentAuthUserId(data.currentUser.authUserId);
     } catch (error) {
+      if (requestId !== loadRequestRef.current) return;
       setProject(null);
       setMinutesList([]);
       setAccountMembers([]);
@@ -126,8 +132,10 @@ export default function ProjectDetailPage() {
         );
       }
     } finally {
-      setLoadedProjectId(id);
-      setIsLoading(false);
+      if (requestId === loadRequestRef.current) {
+        setLoadedProjectId(id);
+        setIsLoading(false);
+      }
     }
   };
 
@@ -284,12 +292,11 @@ export default function ProjectDetailPage() {
   const isEndedProject = project.status === "DISPOSED";
   const canCreateMinutes = !isDeletedProject && !isEndedProject;
   const hasAccountMembers = accountMembers.length > 0;
-  const canManageProject =
-    !hasAccountMembers ||
-    accountMembers.some(
-      (member) =>
-        member.userId === currentAuthUserId && member.role === "OWNER"
-    );
+  // 멤버 목록이 비어 있으면 소유자를 확인할 수 없으므로 관리 권한을 주지 않는다.
+  const canManageProject = accountMembers.some(
+    (member) =>
+      member.userId === currentAuthUserId && member.role === "OWNER"
+  );
   const currentMembership = accountMembers.find(
     (member) => member.userId === currentAuthUserId
   );

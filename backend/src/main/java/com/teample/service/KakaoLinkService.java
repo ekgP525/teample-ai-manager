@@ -13,12 +13,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.Base64;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 카카오 "나에게 보내기" 연결 관리. 토큰 저장·갱신과 메시지 발송을 담당한다.
@@ -27,10 +29,15 @@ import java.util.Optional;
 public class KakaoLinkService {
 
     private static final long ACCESS_REFRESH_MARGIN_SECONDS = 300;
+    private static final Duration STATE_TTL = Duration.ofMinutes(10);
+    private static final int STATE_BYTES = 24;
 
     private final KakaoLinkRepository kakaoLinkRepository;
     private final KakaoApiClient kakaoApiClient;
     private final SecretCipher secretCipher;
+    private final SecureRandom secureRandom = new SecureRandom();
+    /** 사용자별로 발급한 OAuth state. 콜백에서 한 번 쓰면 지운다. */
+    private final Map<String, PendingState> pendingStates = new ConcurrentHashMap<>();
 
     public KakaoLinkService(KakaoLinkRepository kakaoLinkRepository, KakaoApiClient kakaoApiClient, SecretCipher secretCipher) {
         this.kakaoLinkRepository = kakaoLinkRepository;
@@ -47,13 +54,12 @@ public class KakaoLinkService {
                 .orElseGet(() -> KakaoLinkResponse.notLinked(configured));
     }
 
-    /** 카카오 동의 화면 URL. state는 사용자 ID에서 파생한 값이라 콜백에서 위조를 잡을 수 있다. */
-    @Transactional(readOnly = true)
+    /** 카카오 동의 화면 URL. state는 요청마다 새로 만든 난수이며 서버가 10분 동안 기억한다. */
     public KakaoConnectUrlResponse connectUrl(AuthenticatedUser user, String redirectUri) {
         requireUser(user);
         ensureConfigured();
         validateRedirectUri(redirectUri);
-        String state = stateFor(user.authUserId());
+        String state = issueState(user.authUserId());
         return new KakaoConnectUrlResponse(kakaoApiClient.buildAuthorizeUrl(redirectUri, state), state);
     }
 
@@ -62,9 +68,7 @@ public class KakaoLinkService {
         requireUser(user);
         ensureConfigured();
         validateRedirectUri(redirectUri);
-        if (state != null && !state.isBlank() && !stateFor(user.authUserId()).equals(state)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "카카오 연결 요청이 현재 사용자와 일치하지 않습니다.");
-        }
+        consumeState(user.authUserId(), state);
 
         KakaoApiClient.TokenResponse token;
         String kakaoUserId;
@@ -112,8 +116,11 @@ public class KakaoLinkService {
         kakaoLinkRepository.delete(link.get());
     }
 
-    /** 사용자 본인에게 카카오톡 메시지를 보낸다. 토큰이 만료됐으면 갱신 후 재시도한다. */
-    @Transactional
+    /**
+     * 사용자 본인에게 카카오톡 메시지를 보낸다. 토큰이 만료됐으면 갱신 후 재시도한다.
+     * 갱신 실패로 refresh token을 비운 상태 변경은 409를 던져도 커밋되어야 하므로 ResponseStatusException은 롤백하지 않는다.
+     */
+    @Transactional(noRollbackFor = ResponseStatusException.class)
     public void sendToSelf(String userId, String text, String webUrl, String buttonTitle) {
         KakaoLink link = kakaoLinkRepository.findById(userId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "카카오가 연결되어 있지 않습니다."));
@@ -136,7 +143,7 @@ public class KakaoLinkService {
         kakaoLinkRepository.save(link);
     }
 
-    @Transactional
+    @Transactional(noRollbackFor = ResponseStatusException.class)
     public void sendTestMessage(AuthenticatedUser user, String appBaseUrl) {
         requireUser(user);
         sendToSelf(user.authUserId(),
@@ -162,6 +169,14 @@ public class KakaoLinkService {
             kakaoLinkRepository.save(link);
             return token.accessToken();
         } catch (KakaoApiException e) {
+            if (e.isInvalidGrant()) {
+                // 리프레시 토큰이 카카오 쪽에서 무효가 됐다. 다시 연결해야 하므로 needsReconnect가 되도록 지운다.
+                link.setRefreshToken(null);
+                link.setRefreshExpiresAt(null);
+                kakaoLinkRepository.save(link);
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "카카오 연결이 만료되었습니다. 프로필에서 다시 연결해 주세요.", e);
+            }
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "카카오 토큰 갱신에 실패했습니다: " + e.getMessage(), e);
         }
     }
@@ -189,12 +204,32 @@ public class KakaoLinkService {
         return new ResponseStatusException(HttpStatus.BAD_GATEWAY, e.getMessage(), e);
     }
 
-    static String stateFor(String userId) {
-        try {
-            byte[] digest = MessageDigest.getInstance("SHA-256").digest(("kakao-link:" + userId).getBytes(StandardCharsets.UTF_8));
-            return Base64.getUrlEncoder().withoutPadding().encodeToString(digest).substring(0, 24);
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException(e);
+    private String issueState(String userId) {
+        Instant now = Instant.now();
+        pendingStates.values().removeIf(pending -> pending.isExpired(now));
+        byte[] bytes = new byte[STATE_BYTES];
+        secureRandom.nextBytes(bytes);
+        String nonce = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+        pendingStates.put(userId, new PendingState(nonce, now.plus(STATE_TTL)));
+        return nonce;
+    }
+
+    /** state가 없거나, 발급한 적이 없거나, 만료됐거나, 다르면 400. 맞으면 소비해서 재사용을 막는다. */
+    private void consumeState(String userId, String state) {
+        if (state == null || state.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "카카오 연결 요청에 state가 없습니다. 연결을 다시 시작해 주세요.");
+        }
+        PendingState pending = pendingStates.get(userId);
+        if (pending == null || pending.isExpired(Instant.now()) || !pending.nonce().equals(state.trim())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "카카오 연결 요청이 현재 사용자와 일치하지 않거나 만료되었습니다. 연결을 다시 시작해 주세요.");
+        }
+        pendingStates.remove(userId, pending);
+    }
+
+    private record PendingState(String nonce, Instant expiresAt) {
+        boolean isExpired(Instant now) {
+            return !expiresAt.isAfter(now);
         }
     }
 

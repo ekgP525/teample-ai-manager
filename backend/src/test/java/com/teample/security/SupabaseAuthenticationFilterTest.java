@@ -108,6 +108,28 @@ class SupabaseAuthenticationFilterTest {
     }
 
     @Test
+    void rejectsMalformedAdminSelectedUserHeaderWith401() throws Exception {
+        SupabaseAuthService authService = mock(SupabaseAuthService.class);
+        AdminTestAuthService adminTestAuthService = mock(AdminTestAuthService.class);
+        SupabaseAuthenticationFilter filter = new SupabaseAuthenticationFilter(authService, adminTestAuthService);
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/dashboard/projects/my");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        FilterChain filterChain = mock(FilterChain.class);
+
+        request.addHeader(SupabaseAuthenticationFilter.ADMIN_ID_HEADER, "admin");
+        request.addHeader(SupabaseAuthenticationFilter.ADMIN_PASSWORD_HEADER, "correct-horse-battery");
+        request.addHeader(SupabaseAuthenticationFilter.CURRENT_USER_ID_HEADER, "%E0%A4%A");
+        when(adminTestAuthService.matches("admin", "correct-horse-battery")).thenReturn(true);
+        when(adminTestAuthService.adminId()).thenReturn("admin");
+
+        filter.doFilter(request, response, filterChain);
+
+        assertThat(response.getStatus()).isEqualTo(401);
+        assertThat(response.getContentAsString()).contains("malformed");
+        verify(filterChain, never()).doFilter(any(), any());
+    }
+
+    @Test
     void protectsProjectCreationRequests() throws Exception {
         SupabaseAuthService authService = mock(SupabaseAuthService.class);
         AdminTestAuthService adminTestAuthService = mock(AdminTestAuthService.class);

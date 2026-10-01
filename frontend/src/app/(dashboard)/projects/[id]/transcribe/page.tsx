@@ -56,7 +56,7 @@ export default function TranscribePage() {
       getProject(id, controller.signal),
       getProjectMembers(id, controller.signal).catch(() => [] as ProjectMember[]),
       getMyPlan(controller.signal),
-      getProjectTranscriptions(id, controller.signal).catch(() => [] as Transcription[]),
+      getProjectTranscriptions(id, controller.signal),
     ])
       .then(([projectData, memberData, planData, transcriptions]) => {
         setProject(projectData);

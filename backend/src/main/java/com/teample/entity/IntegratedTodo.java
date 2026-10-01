@@ -7,13 +7,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(
-        name = "integrated_todos",
-        uniqueConstraints = @UniqueConstraint(
-                name = "uk_integrated_todos_minutes_source",
-                columnNames = {"minutes_id", "source_index"}
-        )
-)
+@Table(name = "integrated_todos")
 @Getter
 @Setter
 @NoArgsConstructor
@@ -33,8 +27,13 @@ public class IntegratedTodo {
     @JoinColumn(name = "minutes_id")
     private Minutes minutes;
 
+    /** 회의록 JSON 안의 위치. 표시 순서 용도이며 정체성은 sourceTodoId가 맡는다. */
     @Column(name = "source_index")
     private Integer sourceIndex;
+
+    /** 회의록 JSON 안 TodoData.id. 편집으로 순서가 바뀌어도 같은 업무를 가리킨다. */
+    @Column(name = "source_todo_id", length = 64)
+    private String sourceTodoId;
 
     @Column(nullable = false, columnDefinition = "text")
     private String content;

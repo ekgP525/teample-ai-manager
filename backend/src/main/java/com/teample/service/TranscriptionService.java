@@ -13,8 +13,11 @@ import com.teample.repository.TranscriptionRepository;
 import com.teample.security.AuthenticatedUser;
 import com.teample.service.transcription.MediaStorageService;
 import com.teample.service.transcription.SpeechToTextProvider;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.task.TaskRejectedException;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -43,8 +46,29 @@ import java.util.Set;
 @Service
 public class TranscriptionService {
 
+    private static final Logger log = LoggerFactory.getLogger(TranscriptionService.class);
+
     static final Set<String> AUDIO_EXTENSIONS = Set.of("mp3", "m4a", "wav", "flac", "amr", "aac", "ogg", "oga", "opus", "weba");
     static final Set<String> VIDEO_EXTENSIONS = Set.of("mp4", "mov", "mkv", "avi", "webm", "m4v");
+    /** /audio 응답 Content-Type. 업로드 때 받은 값은 믿지 않고 저장된 파일 확장자로만 정한다. */
+    static final Map<String, String> CONTENT_TYPES_BY_EXTENSION = Map.ofEntries(
+            Map.entry("mp3", "audio/mpeg"),
+            Map.entry("m4a", "audio/mp4"),
+            Map.entry("mp4", "audio/mp4"),
+            Map.entry("wav", "audio/wav"),
+            Map.entry("flac", "audio/flac"),
+            Map.entry("ogg", "audio/ogg"),
+            Map.entry("oga", "audio/ogg"),
+            Map.entry("opus", "audio/ogg"),
+            Map.entry("webm", "audio/webm"),
+            Map.entry("aac", "audio/aac"),
+            Map.entry("amr", "audio/amr"),
+            Map.entry("mov", "video/quicktime"),
+            Map.entry("mkv", "video/x-matroska"),
+            Map.entry("avi", "video/x-msvideo"),
+            Map.entry("m4v", "video/mp4")
+    );
+    static final String DEFAULT_CONTENT_TYPE = "application/octet-stream";
 
     private static final TypeReference<List<TranscriptSegment>> SEGMENTS_TYPE = new TypeReference<>() {
     };
@@ -147,8 +171,15 @@ public class TranscriptionService {
                 .language(language == null || language.isBlank() ? "ko" : language.trim())
                 .expectedSpeakers(expectedSpeakers)
                 .build();
-        Transcription saved = transcriptionRepository.save(transcription);
-        dispatchAfterCommit(saved.getId());
+        Transcription saved;
+        try {
+            saved = transcriptionRepository.save(transcription);
+        } catch (RuntimeException e) {
+            // DB에 남지 않은 파일은 바로 지운다. 커밋 단계에서 실패하는 경우는 afterCompletion에서 처리한다.
+            mediaStorageService.delete(storagePath);
+            throw e;
+        }
+        dispatchAfterCommit(saved.getId(), storagePath);
         return toResponse(saved);
     }
 
@@ -192,33 +223,46 @@ public class TranscriptionService {
                 });
     }
 
-    /** 전사 결과를 기존 회의록 파이프라인에 넣어 회의록을 만든다. 한 전사당 한 번만 가능하다. */
-    @Transactional
+    /**
+     * 전사 결과를 기존 회의록 파이프라인에 넣어 회의록을 만든다. 한 전사당 한 번만 가능하다.
+     * Claude 호출이 길어 트랜잭션을 걸지 않는다. 읽기 검증 → AI 생성 → 짧은 트랜잭션으로 연결 저장 순서다.
+     */
     public Optional<MinutesResponse> createMinutes(
             String projectId, String id, String title, String meetingDate, AuthenticatedUser user, boolean admin
     ) {
         projectMemberService.ensureProjectMember(projectId, user, admin);
-        return transcriptionRepository.findById(id)
-                .filter(transcription -> transcription.belongsToProject(projectId))
-                .map(transcription -> {
-                    if (transcription.getStatus() != TranscriptionStatus.COMPLETED) {
-                        throw new ResponseStatusException(HttpStatus.CONFLICT, "전사가 완료된 뒤에 회의록을 만들 수 있습니다.");
-                    }
-                    if (transcription.hasMinutes()) {
-                        throw new ResponseStatusException(HttpStatus.CONFLICT, "이 전사로 만든 회의록이 이미 있습니다.");
-                    }
-                    List<TranscriptSegment> segments = readSegments(transcription);
-                    if (segments.isEmpty()) {
-                        throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "전사 결과에 인식된 발언이 없습니다.");
-                    }
-                    LocalDate date = parseMeetingDate(meetingDate);
-                    String rawText = buildTranscriptText(segments, readSpeakerNames(transcription));
-                    MinutesResponse minutes = minutesService.createFromTranscript(
-                            transcription.getProject(), title, date, rawText, transcription.getId());
-                    transcription.setMinutesId(minutes.getId());
-                    transcriptionRepository.save(transcription);
-                    return minutes;
-                });
+        Optional<Transcription> found = transcriptionRepository.findById(id)
+                .filter(transcription -> transcription.belongsToProject(projectId));
+        if (found.isEmpty()) {
+            return Optional.empty();
+        }
+        Transcription transcription = found.get();
+        if (transcription.getStatus() != TranscriptionStatus.COMPLETED) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "전사가 완료된 뒤에 회의록을 만들 수 있습니다.");
+        }
+        if (transcription.hasMinutes()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "이 전사로 만든 회의록이 이미 있습니다.");
+        }
+        List<TranscriptSegment> segments = readSegments(transcription);
+        if (segments.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "전사 결과에 인식된 발언이 없습니다.");
+        }
+        LocalDate date = parseMeetingDate(meetingDate);
+        String rawText = buildTranscriptText(segments, readSpeakerNames(transcription));
+        Project project = projectRepository.findById(projectId)
+                .orElseThrow(() -> new ProjectMemberService.ProjectNotFoundException("Project not found."));
+
+        MinutesResponse minutes = minutesService.createFromTranscript(project, title, date, rawText, transcription.getId());
+        linkMinutes(transcription.getId(), minutes.getId());
+        return Optional.of(minutes);
+    }
+
+    /** 저장소 호출 하나라 자체 트랜잭션으로 충분하다. (self-invocation이라 @Transactional을 붙여도 적용되지 않는다.) */
+    private void linkMinutes(String transcriptionId, String minutesId) {
+        transcriptionRepository.findById(transcriptionId).ifPresent(transcription -> {
+            transcription.setMinutesId(minutesId);
+            transcriptionRepository.save(transcription);
+        });
     }
 
     @Transactional(readOnly = true)
@@ -229,9 +273,23 @@ public class TranscriptionService {
                 .filter(transcription -> mediaStorageService.exists(transcription.getStoragePath()))
                 .map(transcription -> new AudioFile(
                         new FileSystemResource(mediaStorageService.resolve(transcription.getStoragePath())),
-                        transcription.getContentType() == null ? "application/octet-stream" : transcription.getContentType(),
+                        contentTypeFor(transcription.getStoragePath()),
                         transcription.getSourceFileName()
                 ));
+    }
+
+    /** 저장 경로의 확장자를 허용 목록에서 찾아 Content-Type을 정한다. 목록에 없으면 octet-stream. */
+    static String contentTypeFor(String storagePath) {
+        if (storagePath == null) {
+            return DEFAULT_CONTENT_TYPE;
+        }
+        String name = storagePath.trim();
+        int dot = name.lastIndexOf('.');
+        if (dot < 0 || dot == name.length() - 1) {
+            return DEFAULT_CONTENT_TYPE;
+        }
+        String extension = name.substring(dot + 1).toLowerCase(Locale.ROOT);
+        return CONTENT_TYPES_BY_EXTENSION.getOrDefault(extension, DEFAULT_CONTENT_TYPE);
     }
 
     @Transactional
@@ -364,16 +422,35 @@ public class TranscriptionService {
         }
     }
 
-    private void dispatchAfterCommit(String transcriptionId) {
+    private void dispatchAfterCommit(String transcriptionId, String storagePath) {
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
-                    transcriptionProcessor.process(transcriptionId);
+                    dispatch(transcriptionId);
+                }
+
+                @Override
+                public void afterCompletion(int status) {
+                    if (status != STATUS_COMMITTED) {
+                        // 커밋되지 않았으면 DB에 행이 없으므로 저장한 파일을 치운다.
+                        mediaStorageService.delete(storagePath);
+                    }
                 }
             });
         } else {
+            dispatch(transcriptionId);
+        }
+    }
+
+    /** 실행기가 거절해도(TaskRejectedException) 행은 QUEUED로 남아 TranscriptionProcessor의 주기 점검이 다시 넣는다. */
+    private void dispatch(String transcriptionId) {
+        try {
             transcriptionProcessor.process(transcriptionId);
+        } catch (TaskRejectedException e) {
+            log.warn("전사 실행기가 가득 차서 {}를 바로 시작하지 못했습니다. 주기 점검에서 다시 시도합니다.", transcriptionId);
+        } catch (RuntimeException e) {
+            log.warn("전사 {} 시작 요청에 실패했습니다. 주기 점검에서 다시 시도합니다: {}", transcriptionId, e.getMessage());
         }
     }
 

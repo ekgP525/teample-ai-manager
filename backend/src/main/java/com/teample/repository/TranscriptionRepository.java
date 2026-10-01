@@ -16,6 +16,9 @@ public interface TranscriptionRepository extends JpaRepository<Transcription, St
 
     List<Transcription> findByStatusIn(Collection<TranscriptionStatus> statuses);
 
+    /** 아직 STT에 제출되지 않은 채 오래 머문 작업(실행기 거절 등). 재디스패치용. */
+    List<Transcription> findByStatusAndProviderJobIdIsNullAndCreatedAtBefore(TranscriptionStatus status, LocalDateTime before);
+
     long countByCreatedByAndStatusIn(String createdBy, Collection<TranscriptionStatus> statuses);
 
     /** 기간 내 사용자가 만든 전사의 총 길이(ms). 실패한 작업은 제외한다. */

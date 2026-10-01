@@ -1,11 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { createMinutes } from "@/lib/api/minutes";
 import { getProject } from "@/lib/api/projects";
 import type { Project } from "@/types/minutes";
+
+function createRequestKey() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  // 비보안 컨텍스트(http)에서는 randomUUID가 없을 수 있으므로 임의 키로 대체한다.
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+}
 
 export default function NewMinutesPage() {
   const router = useRouter();
@@ -20,15 +28,24 @@ export default function NewMinutesPage() {
   const [projectError, setProjectError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+  // 가장 최근 로드 요청 번호. 이전 요청(예: 다른 프로젝트의 재시도)의 결과는 무시한다.
+  const loadRequestRef = useRef(0);
+  // 같은 내용을 다시 제출하면 같은 Idempotency-Key를 써서 회의록이 중복 생성되지 않게 한다.
+  const requestKeyRef = useRef<{ payload: string; key: string } | null>(null);
 
   const loadProject = useCallback(
     async (signal?: AbortSignal) => {
+      const requestId = ++loadRequestRef.current;
+      const isStale = () =>
+        signal?.aborted || requestId !== loadRequestRef.current;
+
       try {
         const project = await getProject(id, signal);
+        if (isStale()) return;
         setProjectStatus(project.status);
         setProjectError("");
       } catch (loadError) {
-        if (signal?.aborted) return;
+        if (isStale()) return;
 
         setProjectStatus(null);
         setProjectError(
@@ -37,7 +54,7 @@ export default function NewMinutesPage() {
             : "프로젝트를 확인하지 못했습니다."
         );
       } finally {
-        if (!signal?.aborted) {
+        if (!isStale()) {
           setLoadedProjectId(id);
           setIsCheckingProject(false);
         }
@@ -48,6 +65,7 @@ export default function NewMinutesPage() {
 
   useEffect(() => {
     const controller = new AbortController();
+    loadRequestRef.current += 1;
 
     void getProject(id, controller.signal)
       .then((project) => {
@@ -106,11 +124,16 @@ export default function NewMinutesPage() {
     setError("");
 
     try {
-      const data = await createMinutes(id, {
+      const input = {
         title: title.trim(),
         meetingDate,
         rawText: trimmedRawText,
-      });
+      };
+      const payload = JSON.stringify(input);
+      if (requestKeyRef.current?.payload !== payload) {
+        requestKeyRef.current = { payload, key: createRequestKey() };
+      }
+      const data = await createMinutes(id, input, requestKeyRef.current.key);
       router.push(`/projects/${id}/minutes/${data.id}`);
     } catch (err) {
       setError(

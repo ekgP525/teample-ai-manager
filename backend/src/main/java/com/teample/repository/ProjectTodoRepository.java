@@ -11,6 +11,7 @@ public interface ProjectTodoRepository extends JpaRepository<ProjectTodo, String
     List<ProjectTodo> findByMinutesId(String minutesId);
     Optional<ProjectTodo> findByProjectIdAndMinutesIdAndSourceIndex(
             String projectId, String minutesId, Integer sourceIndex);
+    Optional<ProjectTodo> findByMinutesIdAndSourceTodoId(String minutesId, String sourceTodoId);
     void deleteByMinutesId(String minutesId);
     void deleteByProjectId(String projectId);
 }

@@ -16,6 +16,8 @@ import com.teample.security.AuthenticatedUser;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -89,7 +91,7 @@ public class ProjectService {
 
     @Transactional
     public int synchronizeExpiredProjects() {
-        LocalDate today = LocalDate.now();
+        LocalDate today = AppClock.today();
         return (int) projectRepository.findAll().stream()
                 .filter(Project::isVisibleInActiveList)
                 .filter(project -> project.hasEndDatePassed(today))
@@ -109,7 +111,7 @@ public class ProjectService {
     @Transactional
     public boolean delete(String id) {
         return projectRepository.findById(id).map(project -> {
-            project.markDeleted(LocalDateTime.now());
+            project.markDeleted(AppClock.now());
             return true;
         }).orElse(false);
     }
@@ -119,25 +121,49 @@ public class ProjectService {
         return projectRepository.findById(id)
                 .filter(Project::isDeleted)
                 .map(project -> {
-                    project.restore(LocalDate.now(), LocalDateTime.now());
+                    project.restore(AppClock.today(), AppClock.now());
                     return toResponse(project);
                 });
     }
 
+    /** 휴지통(DELETED)에 있는 프로젝트만 영구 삭제한다. 파일은 트랜잭션이 커밋된 뒤에 지운다. */
     @Transactional
     public boolean permanentlyDelete(String id) {
-        return projectRepository.findById(id).map(project -> {
-            projectInvitationRepository.deleteByProjectId(project.getId());
-            projectMemberRepository.deleteByProjectId(project.getId());
-            todoProgressSyncService.deleteByProject(project);
-            integratedTodoRepository.deleteByProjectId(project.getId());
-            minutesRepository.deleteByProjectId(project.getId());
-            transcriptionRepository.findByProjectIdOrderByCreatedAtDesc(project.getId())
-                    .forEach(transcription -> mediaStorageService.delete(transcription.getStoragePath()));
-            transcriptionRepository.deleteByProjectId(project.getId());
-            projectRepository.delete(project);
-            return true;
-        }).orElse(false);
+        return projectRepository.findById(id)
+                .filter(Project::isDeleted)
+                .map(project -> {
+                    List<String> mediaPaths = transcriptionRepository.findByProjectIdOrderByCreatedAtDesc(project.getId()).stream()
+                            .map(transcription -> transcription.getStoragePath())
+                            .filter(path -> path != null && !path.isBlank())
+                            .toList();
+                    projectInvitationRepository.deleteByProjectId(project.getId());
+                    projectMemberRepository.deleteByProjectId(project.getId());
+                    todoProgressSyncService.deleteByProject(project);
+                    integratedTodoRepository.deleteByProjectId(project.getId());
+                    transcriptionRepository.deleteByProjectId(project.getId());
+                    minutesRepository.deleteByProjectId(project.getId());
+                    projectRepository.delete(project);
+                    deleteMediaAfterCommit(mediaPaths);
+                    return true;
+                })
+                .orElse(false);
+    }
+
+    private void deleteMediaAfterCommit(List<String> mediaPaths) {
+        if (mediaPaths.isEmpty()) {
+            return;
+        }
+        Runnable cleanup = () -> mediaPaths.forEach(mediaStorageService::delete);
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    cleanup.run();
+                }
+            });
+        } else {
+            cleanup.run();
+        }
     }
 
     private ProjectResponse toResponse(Project project) {
@@ -168,6 +194,6 @@ public class ProjectService {
     }
 
     private void synchronizeStatus(Project project) {
-        project.synchronizeLifecycle(LocalDate.now(), LocalDateTime.now());
+        project.synchronizeLifecycle(AppClock.today(), AppClock.now());
     }
 }

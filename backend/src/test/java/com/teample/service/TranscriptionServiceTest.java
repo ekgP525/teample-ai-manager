@@ -86,6 +86,46 @@ class TranscriptionServiceTest {
     }
 
     @Test
+    void storedFileIsDeletedWhenDatabaseSaveFails(@TempDir Path tempDir) throws Exception {
+        Fixture fixture = new Fixture(tempDir, true);
+        MockMultipartFile file = new MockMultipartFile("file", "meeting.mp3", "audio/mpeg", new byte[]{1, 2});
+        when(fixture.transcriptionRepository.save(any(Transcription.class)))
+                .thenThrow(new org.springframework.dao.DataIntegrityViolationException("boom"));
+
+        assertThatThrownBy(() -> fixture.service.create("project-1", user, false, file, null, null, true))
+                .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+
+        try (var files = Files.walk(tempDir)) {
+            assertThat(files.filter(Files::isRegularFile).count()).isZero();
+        }
+        verify(fixture.processor, never()).process(any());
+    }
+
+    @Test
+    void audioContentTypeComesFromStoredExtensionNotUploadHeader(@TempDir Path tempDir) throws Exception {
+        Fixture fixture = new Fixture(tempDir, true);
+        Files.createDirectories(tempDir.resolve("2026-10"));
+        Files.write(tempDir.resolve("2026-10/x.m4a"), new byte[]{1});
+        Transcription transcription = Transcription.builder()
+                .id("tr-1").project(fixture.project).createdBy("user-1")
+                .status(TranscriptionStatus.COMPLETED)
+                .contentType("text/html")
+                .storagePath("2026-10/x.m4a")
+                .sourceFileName("회의.m4a")
+                .build();
+        when(fixture.transcriptionRepository.findById("tr-1")).thenReturn(Optional.of(transcription));
+
+        TranscriptionService.AudioFile audio = fixture.service.openAudio("project-1", "tr-1", user, false).orElseThrow();
+
+        assertThat(audio.contentType()).isEqualTo("audio/mp4");
+        assertThat(TranscriptionService.contentTypeFor("2026-10/a.MP3")).isEqualTo("audio/mpeg");
+        assertThat(TranscriptionService.contentTypeFor("2026-10/a.mov")).isEqualTo("video/quicktime");
+        assertThat(TranscriptionService.contentTypeFor("2026-10/a.exe")).isEqualTo("application/octet-stream");
+        assertThat(TranscriptionService.contentTypeFor("2026-10/noext")).isEqualTo("application/octet-stream");
+        assertThat(TranscriptionService.contentTypeFor(null)).isEqualTo("application/octet-stream");
+    }
+
+    @Test
     void transcriptTextUsesSpeakerNamesAndTimestamps(@TempDir Path tempDir) {
         Fixture fixture = new Fixture(tempDir, true);
         List<TranscriptSegment> segments = List.of(
@@ -141,7 +181,7 @@ class TranscriptionServiceTest {
         TranscriptionResponse response = fixture.service.updateSpeakerNames(
                 "project-1", "tr-1", Map.of("0", " 박규남 ", "1", "  ", "9", "없는화자"), user, false).orElseThrow();
 
-        assertThat(response.speakerNames()).containsExactlyEntriesOf(Map.of("0", "박규남", "9", "없는화자"));
+        assertThat(response.speakerNames()).hasSize(2).containsAllEntriesOf(Map.of("0", "박규남", "9", "없는화자"));
         assertThat(response.speakerLabels()).containsExactly("0", "1");
     }
 

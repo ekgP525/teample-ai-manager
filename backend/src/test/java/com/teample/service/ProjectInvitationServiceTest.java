@@ -6,6 +6,7 @@ import com.teample.entity.Project;
 import com.teample.entity.ProjectInvitation;
 import com.teample.entity.ProjectMember;
 import com.teample.entity.ProjectMemberRole;
+import com.teample.entity.ProjectStatus;
 import com.teample.repository.ProjectInvitationRepository;
 import com.teample.repository.ProjectMemberRepository;
 import com.teample.repository.ProjectRepository;
@@ -16,12 +17,14 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -90,11 +93,48 @@ class ProjectInvitationServiceTest {
 
         JoinProjectInvitationResponse response = service.join(" abc123 ", user);
 
-        verify(memberRepository).save(captor.capture());
+        verify(memberRepository).saveAndFlush(captor.capture());
         assertThat(captor.getValue().getUserId()).isEqualTo("user-id");
         assertThat(captor.getValue().getRole()).isEqualTo(ProjectMemberRole.MEMBER);
         assertThat(response.projectId()).isEqualTo("project-id");
         assertThat(response.projectName()).isEqualTo("Project");
+    }
+
+    @Test
+    void joinRejectsEndedOrDeletedProjectWithConflict() {
+        ProjectInvitation invitation = ProjectInvitation.builder()
+                .projectId("project-id").code("ABC123").active(true)
+                .expiresAt(LocalDateTime.now().plusHours(1)).build();
+        AuthenticatedUser user = new AuthenticatedUser("user-id", "member", "member@example.com");
+        when(invitationRepository.findByCode("ABC123")).thenReturn(Optional.of(invitation));
+        when(projectRepository.findById("project-id")).thenReturn(Optional.of(
+                Project.builder().id("project-id").name("Project").status(ProjectStatus.ENDED).build()));
+
+        assertThatThrownBy(() -> service.join("ABC123", user))
+                .isInstanceOf(ProjectInvitationService.ProjectClosedException.class);
+
+        when(projectRepository.findById("project-id")).thenReturn(Optional.of(
+                Project.builder().id("project-id").name("Project").status(ProjectStatus.DELETED).build()));
+        assertThatThrownBy(() -> service.join("ABC123", user))
+                .isInstanceOf(ProjectInvitationService.ProjectClosedException.class);
+        verify(memberRepository, never()).saveAndFlush(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void joinTreatsUniqueViolationOnInsertAsAlreadyMember() {
+        Project project = Project.builder().id("project-id").name("Project").build();
+        ProjectInvitation invitation = ProjectInvitation.builder()
+                .projectId("project-id").code("ABC123").active(true)
+                .expiresAt(LocalDateTime.now().plusHours(1)).build();
+        AuthenticatedUser user = new AuthenticatedUser("user-id", "member", "member@example.com");
+        when(invitationRepository.findByCode("ABC123")).thenReturn(Optional.of(invitation));
+        when(projectRepository.findById("project-id")).thenReturn(Optional.of(project));
+        when(memberRepository.existsByProjectIdAndUserId("project-id", "user-id")).thenReturn(false);
+        when(memberRepository.saveAndFlush(org.mockito.ArgumentMatchers.any(ProjectMember.class)))
+                .thenThrow(new DataIntegrityViolationException("uk_project_members_project_user"));
+
+        assertThatThrownBy(() -> service.join("ABC123", user))
+                .isInstanceOf(ProjectInvitationService.AlreadyProjectMemberException.class);
     }
 
     @Test

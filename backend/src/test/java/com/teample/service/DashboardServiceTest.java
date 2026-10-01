@@ -255,26 +255,28 @@ class DashboardServiceTest {
                 .isInstanceOf(TodoAccessDeniedException.class);
     }
     @Test
-    void jwtDashboardUsesProjectMemberAccessAndLegacyProgressKey() {
+    void jwtDashboardUsesProjectMemberAccessAndAccountIdProgressKey() {
         AuthenticatedUser user = new AuthenticatedUser("supabase-user-id", "alice", "alice@example.com");
+        TodoMemberProgress accountProgress = progress("assignment-acct", "supabase-user-id", false, sharedTodo);
         when(projectRepository.findById("project-1")).thenReturn(Optional.of(project));
-        when(todoMemberProgressRepository.findByProjectIdAndUserIdAndAssignedTrue("project-1", "alice"))
-                .thenReturn(List.of(aliceProgress));
+        when(todoMemberProgressRepository.findByProjectIdAndUserIdAndAssignedTrue("project-1", "supabase-user-id"))
+                .thenReturn(List.of(accountProgress));
 
         MyProjectDashboardResponse dashboard = dashboardService.findMyProjectDashboard("project-1", user, false)
                 .orElseThrow();
 
         verify(projectMemberService).ensureProjectMember(project, user, false);
-        assertThat(dashboard.getUserId()).isEqualTo("alice");
+        assertThat(dashboard.getUserId()).isEqualTo("supabase-user-id");
         assertThat(dashboard.getTodos()).hasSize(1);
+        verify(todoMemberProgressRepository, never()).findByProjectIdAndUserIdAndAssignedTrue("project-1", "alice");
     }
     @Test
     void jwtDashboardSkipsSyncWhenProgressRowsAlreadyExist() {
         AuthenticatedUser user = new AuthenticatedUser("supabase-user-id", "alice", "alice@example.com");
         when(projectRepository.findById("project-1")).thenReturn(Optional.of(project));
         when(todoMemberProgressRepository.existsByProjectId("project-1")).thenReturn(true);
-        when(todoMemberProgressRepository.findByProjectIdAndUserIdAndAssignedTrue("project-1", "alice"))
-                .thenReturn(List.of(aliceProgress));
+        when(todoMemberProgressRepository.findByProjectIdAndUserIdAndAssignedTrue("project-1", "supabase-user-id"))
+                .thenReturn(List.of(progress("assignment-acct", "supabase-user-id", false, sharedTodo)));
 
         MyProjectDashboardResponse dashboard = dashboardService.findMyProjectDashboard("project-1", user, false)
                 .orElseThrow();

@@ -18,6 +18,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class PlanServiceTest {
@@ -119,6 +121,53 @@ class PlanServiceTest {
 
         assertThat(service.isPlanAdmin(user, false)).isTrue();
         assertThat(service.isPlanAdmin(new AuthenticatedUser("user-9", "x", null), false)).isFalse();
+    }
+
+    @Test
+    void grantAtLeastKeepsLaterAdminExpiryAndExtendsShorterOne() {
+        UserPlanRepository plans = mock(UserPlanRepository.class);
+        when(plans.save(any(UserPlan.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        PlanService service = new PlanService(plans, mock(TranscriptionRepository.class), 600, "");
+        LocalDateTime adminExpiry = LocalDateTime.now().plusDays(365);
+        LocalDateTime subscriptionExpiry = LocalDateTime.now().plusDays(33);
+        when(plans.findById("target")).thenReturn(Optional.of(UserPlan.builder()
+                .userId("target").plan(PlanType.PREMIUM).expiresAt(adminExpiry).grantedBy("admin-1").note("베타").build()));
+
+        UserPlan kept = service.grantAtLeast("target", PlanType.PREMIUM, subscriptionExpiry, "구독 결제", "subscription");
+
+        assertThat(kept.getExpiresAt()).isEqualTo(adminExpiry);
+        assertThat(kept.getGrantedBy()).isEqualTo("admin-1");
+        verify(plans, never()).save(any());
+
+        when(plans.findById("target")).thenReturn(Optional.of(UserPlan.builder()
+                .userId("target").plan(PlanType.PREMIUM).expiresAt(LocalDateTime.now().plusDays(1)).grantedBy("subscription").build()));
+        UserPlan extended = service.grantAtLeast("target", PlanType.PREMIUM, subscriptionExpiry, "구독 결제", "subscription");
+        assertThat(extended.getExpiresAt()).isEqualTo(subscriptionExpiry);
+        assertThat(extended.getGrantedBy()).isEqualTo("subscription");
+
+        when(plans.findById("target")).thenReturn(Optional.of(UserPlan.builder()
+                .userId("target").plan(PlanType.PREMIUM).expiresAt(null).grantedBy("admin-1").build()));
+        UserPlan unlimited = service.grantAtLeast("target", PlanType.PREMIUM, subscriptionExpiry, "구독 결제", "subscription");
+        assertThat(unlimited.getExpiresAt()).isNull();
+    }
+
+    @Test
+    void shortenSubscriptionGrantOnlyTouchesRowsGrantedBySubscription() {
+        UserPlanRepository plans = mock(UserPlanRepository.class);
+        when(plans.save(any(UserPlan.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        PlanService service = new PlanService(plans, mock(TranscriptionRepository.class), 600, "");
+        LocalDateTime periodEnd = LocalDateTime.now().plusDays(10);
+        when(plans.findById("admin-granted")).thenReturn(Optional.of(UserPlan.builder()
+                .userId("admin-granted").plan(PlanType.PREMIUM).expiresAt(null).grantedBy("admin-1").build()));
+        when(plans.findById("sub-granted")).thenReturn(Optional.of(UserPlan.builder()
+                .userId("sub-granted").plan(PlanType.PREMIUM).expiresAt(periodEnd.plusDays(3)).grantedBy("subscription").build()));
+
+        assertThat(service.shortenSubscriptionGrant("admin-granted", periodEnd, "해지")).isEmpty();
+        verify(plans, never()).save(any());
+
+        UserPlan shortened = service.shortenSubscriptionGrant("sub-granted", periodEnd, "해지").orElseThrow();
+        assertThat(shortened.getExpiresAt()).isEqualTo(periodEnd);
+        verify(plans).save(shortened);
     }
 
     @Test

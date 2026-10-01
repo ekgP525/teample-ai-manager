@@ -111,6 +111,50 @@ class ProjectTodoServiceTest {
     }
 
     @Test
+    void editingMinutesKeepsTodoIdentityByIdAndRemovesDeletedOnes() {
+        Project project = Project.builder().id("project-id").build();
+        Minutes minutes = Minutes.builder()
+                .id("minutes-id")
+                .project(project)
+                .todos(List.of(new TodoData("id-b", "Bob", "Second task (edited)", "2026-08-20")))
+                .build();
+        IntegratedTodo first = IntegratedTodo.builder().id("row-a").project(project).minutes(minutes)
+                .sourceTodoId("id-a").sourceIndex(0).content("First task").assigneeName("Alice")
+                .status(TodoStatus.COMPLETED).priorityOrder(1).build();
+        IntegratedTodo second = IntegratedTodo.builder().id("row-b").project(project).minutes(minutes)
+                .sourceTodoId("id-b").sourceIndex(1).content("Second task").assigneeName("Bob")
+                .status(TodoStatus.TODO).priorityOrder(2).build();
+        when(todoRepository.findByMinutesIdOrderBySourceIndexAsc("minutes-id")).thenReturn(List.of(first, second));
+
+        service.synchronizeFromMinutes(minutes);
+
+        verify(todoRepository).deleteAll(List.of(first));
+        ArgumentCaptor<List<IntegratedTodo>> captor = ArgumentCaptor.forClass(List.class);
+        verify(todoRepository).saveAll(captor.capture());
+        assertThat(captor.getValue()).containsExactly(second);
+        assertThat(second.getSourceIndex()).isZero();
+        assertThat(second.getContent()).isEqualTo("Second task (edited)");
+        assertThat(second.getStatus()).isEqualTo(TodoStatus.TODO);
+    }
+
+    @Test
+    void legacyRowsWithoutSourceIdAreAdoptedByPositionAndGetIds() {
+        Project project = Project.builder().id("project-id").build();
+        TodoData source = new TodoData("Alice", "Task", "2026-08-13");
+        Minutes minutes = Minutes.builder().id("minutes-id").project(project).todos(List.of(source)).build();
+        IntegratedTodo legacy = IntegratedTodo.builder().id("row").project(project).minutes(minutes)
+                .sourceIndex(0).content("Task").assigneeName("Alice").status(TodoStatus.COMPLETED).priorityOrder(1).build();
+        when(todoRepository.findByMinutesIdOrderBySourceIndexAsc("minutes-id")).thenReturn(List.of(legacy));
+
+        service.synchronizeFromMinutes(minutes);
+
+        assertThat(source.getId()).isNotBlank();
+        assertThat(legacy.getSourceTodoId()).isEqualTo(source.getId());
+        verify(minutesRepository).save(minutes);
+        verify(todoRepository, never()).deleteAll(any());
+    }
+
+    @Test
     void completingAndRestoringTodoOnlyChangesStatus() {
         IntegratedTodo todo = IntegratedTodo.builder()
                 .id("todo-id")

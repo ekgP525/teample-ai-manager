@@ -14,7 +14,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -55,8 +54,11 @@ public class DeadlineReminderService {
         this.appBaseUrl = appBaseUrl.replaceAll("/+$", "");
     }
 
-    /** 알림을 켠 모든 사용자에게 오늘 분 알림을 보낸다. 보낸 사용자 수를 돌려준다. */
-    @Transactional
+    /**
+     * 알림을 켠 모든 사용자에게 오늘 분 알림을 보낸다. 보낸 사용자 수를 돌려준다.
+     * 일부러 트랜잭션을 걸지 않는다. 사용자마다 발송(sendToSelf)과 로그 저장이 각자 커밋되므로
+     * 한 사용자의 실패가 다른 사용자의 발송 기록을 되돌리지 않는다.
+     */
     public int sendDueReminders(LocalDate today) {
         int sent = 0;
         for (KakaoLink link : kakaoLinkRepository.findByDeadlineRemindersTrue()) {

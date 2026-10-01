@@ -139,6 +139,66 @@ class SupabaseAuthServiceTest {
     }
 
     @Test
+    void rejectsWrongAudienceButAcceptsAuthenticatedAudience() throws Exception {
+        KeyPair keyPair = keyPair();
+        SupabaseAuthService service = serviceWithJwks(jwks(keyPair), ISSUER);
+        long exp = Instant.now().plusSeconds(3600).getEpochSecond();
+        String wrong = token("""
+                {"sub": "u", "iss": "%s", "exp": %d, "aud": "anon"}
+                """.formatted(ISSUER, exp), keyPair, KEY_ID);
+        String right = token("""
+                {"sub": "u", "iss": "%s", "exp": %d, "aud": "authenticated"}
+                """.formatted(ISSUER, exp), keyPair, KEY_ID);
+        String array = token("""
+                {"sub": "u", "iss": "%s", "exp": %d, "aud": ["authenticated", "other"]}
+                """.formatted(ISSUER, exp), keyPair, KEY_ID);
+
+        assertThatThrownBy(() -> service.authenticate(requestWithBearer(wrong)))
+                .isInstanceOf(AuthRequiredException.class)
+                .hasMessageContaining("audience");
+        assertThat(service.authenticate(requestWithBearer(right)).authUserId()).isEqualTo("u");
+        assertThat(service.authenticate(requestWithBearer(array)).authUserId()).isEqualTo("u");
+    }
+
+    @Test
+    void unknownKidRefetchesJwksAtMostOncePerThirtySeconds() throws Exception {
+        KeyPair keyPair = keyPair();
+        TestSupabaseAuthService service = new TestSupabaseAuthService(jwks(keyPair));
+        ReflectionTestUtils.setField(service, "supabaseJwksUri", JWKS_URI);
+        ReflectionTestUtils.setField(service, "supabaseJwtIssuer", ISSUER);
+        long exp = Instant.now().plusSeconds(3600).getEpochSecond();
+        String payload = """
+                {"sub": "u", "iss": "%s", "exp": %d}
+                """.formatted(ISSUER, exp);
+        String known = token(payload, keyPair, KEY_ID);
+        String unknown = token(payload, keyPair, "rotated-key");
+
+        service.authenticate(requestWithBearer(known));
+        assertThat(service.fetchCount).isEqualTo(1);
+
+        // 방금 받은 JWKS에 없는 kid: 30초 안에는 네트워크를 타지 않는다.
+        assertThatThrownBy(() -> service.authenticate(requestWithBearer(unknown)))
+                .isInstanceOf(AuthRequiredException.class)
+                .hasMessageContaining("signing key was not found");
+        assertThat(service.fetchCount).isEqualTo(1);
+
+        // 마지막 조회가 30초 넘게 지났으면 한 번 다시 받는다.
+        ReflectionTestUtils.setField(service, "lastJwksFetchAt", Instant.now().minusSeconds(31));
+        assertThatThrownBy(() -> service.authenticate(requestWithBearer(unknown)))
+                .isInstanceOf(AuthRequiredException.class)
+                .hasMessageContaining("signing key was not found");
+        assertThat(service.fetchCount).isEqualTo(2);
+
+        assertThatThrownBy(() -> service.authenticate(requestWithBearer(unknown)))
+                .isInstanceOf(AuthRequiredException.class)
+                .hasMessageContaining("signing key was not found");
+        assertThat(service.fetchCount).as("negative cache: no refetch within 30s").isEqualTo(2);
+
+        service.authenticate(requestWithBearer(known));
+        assertThat(service.fetchCount).isEqualTo(2);
+    }
+
+    @Test
     void rejectsMissingJwksUri() throws Exception {
         KeyPair keyPair = keyPair();
         SupabaseAuthService service = serviceWithJwks(jwks(keyPair), ISSUER);
@@ -257,6 +317,7 @@ class SupabaseAuthServiceTest {
 
     private static class TestSupabaseAuthService extends SupabaseAuthService {
         private final JsonNode jwks;
+        int fetchCount;
 
         private TestSupabaseAuthService(JsonNode jwks) {
             this.jwks = jwks;
@@ -264,6 +325,7 @@ class SupabaseAuthServiceTest {
 
         @Override
         protected JsonNode fetchJwks() {
+            fetchCount++;
             return jwks;
         }
     }

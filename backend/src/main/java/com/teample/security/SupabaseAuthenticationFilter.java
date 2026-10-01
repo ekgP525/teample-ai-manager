@@ -121,10 +121,17 @@ public class SupabaseAuthenticationFilter extends OncePerRequestFilter {
         }
 
         String selectedUserId = request.getHeader(CURRENT_USER_ID_HEADER);
-        String memberKey = selectedUserId == null || selectedUserId.isBlank()
-                ? adminTestAuthService.adminId()
-                : URLDecoder.decode(selectedUserId.trim(), StandardCharsets.UTF_8);
-        if (memberKey.isBlank()) {
+        String memberKey;
+        if (selectedUserId == null || selectedUserId.isBlank()) {
+            memberKey = adminTestAuthService.adminId();
+        } else {
+            try {
+                memberKey = URLDecoder.decode(selectedUserId.trim(), StandardCharsets.UTF_8);
+            } catch (IllegalArgumentException e) {
+                throw new AuthRequiredException("Admin selected user header is malformed.");
+            }
+        }
+        if (memberKey == null || memberKey.isBlank()) {
             throw new AuthRequiredException("Admin selected user is empty.");
         }
         return new AuthenticatedUser("admin-test:" + adminTestAuthService.adminId(), memberKey, null);

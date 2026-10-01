@@ -80,7 +80,7 @@ public class RtzrSpeechToTextProvider implements SpeechToTextProvider {
     public String submit(Path file, String fileName, TranscriptionOptions options) throws SpeechToTextException {
         String token = ensureToken();
         String boundary = "----teample" + UUID.randomUUID().toString().replace("-", "");
-        byte[] body;
+        HttpRequest.BodyPublisher body;
         try {
             body = buildMultipartBody(boundary, file, fileName, buildConfig(options));
         } catch (IOException e) {
@@ -91,7 +91,7 @@ public class RtzrSpeechToTextProvider implements SpeechToTextProvider {
                 .header("Authorization", "Bearer " + token)
                 .header("Content-Type", "multipart/form-data; boundary=" + boundary)
                 .timeout(Duration.ofMinutes(10))
-                .POST(HttpRequest.BodyPublishers.ofByteArray(body))
+                .POST(body)
                 .build();
 
         JsonNode root = send(request, "전사 요청");
@@ -163,10 +163,13 @@ public class RtzrSpeechToTextProvider implements SpeechToTextProvider {
         }
     }
 
-    private byte[] buildMultipartBody(String boundary, Path file, String fileName, String config) throws IOException {
+    /** 파일을 메모리에 올리지 않고 head + 파일 스트림 + tail을 이어서 보낸다. */
+    HttpRequest.BodyPublisher buildMultipartBody(String boundary, Path file, String fileName, String config) throws IOException {
         String safeName = fileName == null || fileName.isBlank() ? file.getFileName().toString() : fileName;
         safeName = safeName.replace("\"", "").replace("\r", "").replace("\n", "");
-        byte[] fileBytes = Files.readAllBytes(file);
+        if (!Files.isRegularFile(file)) {
+            throw new IOException("전송할 파일이 없습니다: " + file.getFileName());
+        }
 
         StringBuilder head = new StringBuilder();
         head.append("--").append(boundary).append("\r\n");
@@ -179,11 +182,11 @@ public class RtzrSpeechToTextProvider implements SpeechToTextProvider {
         byte[] headBytes = head.toString().getBytes(StandardCharsets.UTF_8);
         byte[] tailBytes = ("\r\n--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8);
 
-        byte[] body = new byte[headBytes.length + fileBytes.length + tailBytes.length];
-        System.arraycopy(headBytes, 0, body, 0, headBytes.length);
-        System.arraycopy(fileBytes, 0, body, headBytes.length, fileBytes.length);
-        System.arraycopy(tailBytes, 0, body, headBytes.length + fileBytes.length, tailBytes.length);
-        return body;
+        return HttpRequest.BodyPublishers.concat(
+                HttpRequest.BodyPublishers.ofByteArray(headBytes),
+                HttpRequest.BodyPublishers.ofFile(file),
+                HttpRequest.BodyPublishers.ofByteArray(tailBytes)
+        );
     }
 
     private synchronized String ensureToken() throws SpeechToTextException {

@@ -24,7 +24,9 @@ public class AsyncConfig {
         executor.setMaxPoolSize(4);
         executor.setQueueCapacity(100);
         executor.setThreadNamePrefix("transcribe-");
-        executor.setWaitForTasksToCompleteOnShutdown(false);
+        // 종료 시 진행 중인 전사가 결과를 저장할 시간을 준다. 그래도 끝나지 않으면 인터럽트되어 PROCESSING으로 남고 재시작 때 이어간다.
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(20);
         executor.initialize();
         return executor;
     }
